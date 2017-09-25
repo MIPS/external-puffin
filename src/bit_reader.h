@@ -43,16 +43,21 @@ class BitReaderInterface {
   // TODO(*): Add ReadAndDropBits(uint32_t nbits); Because it is a common
   // pattern.
 
-  // Moves the current bit pointer to the beginning of the next byte and returns
-  // whatever bits that are skipped as an unsigned byte.
-  // Returns an unsigned byte equal to the unread bits in the first cached byte.
+  // Returns an unsigned byte equal to the unread bits in the first cached
+  // byte. This function should not advance the bit pointer in any way. A call
+  // to |SkipBoundaryBits| should do the advancement.
   virtual uint8_t ReadBoundaryBits() = 0;
+
+  // Moves the current bit pointer to the beginning of the next byte and returns
+  // the number of bits skipped.
+  virtual size_t SkipBoundaryBits() = 0;
 
   // Populates a function that allows reading from the byte that has the next
   // avilable bit for reading. This function clears all the bits that have been
   // cached previously. As a consequence the next |CacheBits| starts reading
   // from a byte boundary. The returned functin can only read |length| bytes. It
-  // might be necessary to call |ReadBoundaryBits| before this function.
+  // might be necessary to call |ReadBoundaryBits| and |SkipBoundaryBits| before
+  // this function.
   virtual bool GetByteReaderFn(
       size_t length,
       std::function<bool(uint8_t* buffer, size_t count)>* read_fn) = 0;
@@ -83,6 +88,7 @@ class BufferBitReader : public BitReaderInterface {
   uint32_t ReadBits(size_t nbits) override;
   void DropBits(size_t nbits) override;
   uint8_t ReadBoundaryBits() override;
+  size_t SkipBoundaryBits() override;
   bool GetByteReaderFn(
       size_t length,
       std::function<bool(uint8_t* buffer, size_t count)>* read_fn) override;

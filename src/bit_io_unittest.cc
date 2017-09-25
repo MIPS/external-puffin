@@ -44,6 +44,7 @@ TEST(BitIOTest, BitWriterAndBitReaderTest) {
   ASSERT_EQ(br.ReadBits(8), 0xFF);
   br.DropBits(8);
   ASSERT_EQ(br.ReadBoundaryBits(), 0x0F);
+  ASSERT_EQ(br.SkipBoundaryBits(), 5);
   std::function<bool(uint8_t*, size_t)> read_fn;
   ASSERT_TRUE(br.GetByteReaderFn(2, &read_fn));
   ASSERT_TRUE(read_fn(tmp, 2));
@@ -55,6 +56,9 @@ TEST(BitIOTest, BitWriterAndBitReaderTest) {
   ASSERT_EQ(br.ReadBits(4), 0x0A);
   br.DropBits(4);
   ASSERT_EQ(br.ReadBoundaryBits(), 0x0B);
+  ASSERT_EQ(br.SkipBoundaryBits(), 4);
+  ASSERT_EQ(br.ReadBoundaryBits(), 0);
+  ASSERT_EQ(br.SkipBoundaryBits(), 0);
   ASSERT_FALSE(br.CacheBits(1));
 }
 

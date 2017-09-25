@@ -131,11 +131,13 @@ bool Puffer::PuffDeflate(BitReaderInterface* br,
   *error = Error::kSuccess;
   PuffData pd;
   HuffmanTable* cur_ht;
-  uint8_t final_bit = 0;
-  while (final_bit == 0) {
+  // No bits left to read, return. We try to cache at least eight bits because
+  // the minimum length of a deflate bit stream is 8: (fixed huffman table) 3
+  // bits header + 5 bits just one len/dist symbol.
+  while (br->CacheBits(8)) {
     TEST_AND_RETURN_FALSE_SET_ERROR(br->CacheBits(3),
                                     Error::kInsufficientInput);
-    final_bit = br->ReadBits(1);  // BFINAL
+    uint8_t final_bit = br->ReadBits(1);  // BFINAL
     br->DropBits(1);
     auto type = static_cast<BlockType>(br->ReadBits(2));  // BTYPE
     br->DropBits(2);
@@ -152,6 +154,7 @@ bool Puffer::PuffDeflate(BitReaderInterface* br,
     switch (type) {
       case BlockType::kUncompressed: {
         auto skipped_bits = br->ReadBoundaryBits();
+        br->SkipBoundaryBits();
         TEST_AND_RETURN_FALSE_SET_ERROR(br->CacheBits(32),
                                         Error::kInsufficientInput);
         auto len = br->ReadBits(16);  // LEN
@@ -243,8 +246,10 @@ bool Puffer::PuffDeflate(BitReaderInterface* br,
 
       } else if (256 == lit_len_alphabet) {
         pd.type = PuffData::Type::kEndOfBlock;
+        pd.byte = br->ReadBoundaryBits();
+        // Skip the boundary bits only if it was the final block.
         if (final_bit == 1) {
-          pd.byte = br->ReadBoundaryBits();
+          br->SkipBoundaryBits();
         }
         TEST_AND_RETURN_FALSE(pw->Insert(pd, error));
         break;  // Breaks the loop.

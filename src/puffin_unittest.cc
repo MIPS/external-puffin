@@ -41,10 +41,9 @@ class PuffinTest : public ::testing::Test {
     auto start = static_cast<uint8_t*>(out_buf);
 
     PuffData pd;
-    bool is_finished = false;
     uint8_t final_bit = 0;
     Error error;
-    while (!is_finished) {
+    while (pr.BytesLeft() != 0) {
       TEST_AND_RETURN_FALSE(pr.GetNext(&pd, &error));
       switch (pd.type) {
         case PuffData::Type::kLiteral:
@@ -69,9 +68,6 @@ class PuffinTest : public ::testing::Test {
           break;
 
         case PuffData::Type::kEndOfBlock:
-          if (final_bit == 1) {
-            is_finished = true;
-          }
           break;
 
         default:
@@ -80,7 +76,7 @@ class PuffinTest : public ::testing::Test {
       }
     }
     *out_size = start - static_cast<uint8_t*>(out_buf);
-    *puff_size = pr.Offset();
+    *puff_size = *puff_size - pr.BytesLeft();
     return true;
   }
 
@@ -244,9 +240,20 @@ TEST_F(PuffinTest, PuffDeflateHeaderFailedTest) {
 
 // Tests puffing a block with final block bit unset so it returns
 // Error::kInsufficientInput.
-TEST_F(PuffinTest, PuffDeflateNoFinalBlockFailedTest) {
-  Buffer puffed;
-  FailPuffDeflate(kDeflate7, Error::kInsufficientInput, &puffed);
+TEST_F(PuffinTest, PuffDeflateNoFinalBlockBitTest) {
+  CheckSample(kRaw7, kDeflate7, kPuff7);
+}
+
+TEST_F(PuffinTest, MultipleDeflateBufferNoFinabBitsTest) {
+  CheckSample(kRaw7_2, kDeflate7_2, kPuff7_2);
+}
+
+TEST_F(PuffinTest, MultipleDeflateBufferOneFinalBitTest) {
+  CheckSample(kRaw7_3, kDeflate7_3, kPuff7_3);
+}
+
+TEST_F(PuffinTest, MultipleDeflateBufferBothFinalBitTest) {
+  CheckSample(kRaw7_4, kDeflate7_4, kPuff7_4);
 }
 
 // TODO(ahassani): Add unittests for Failhuff too.

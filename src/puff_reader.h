@@ -29,8 +29,8 @@ class PuffReaderInterface {
   // |error| OUT  The error code.
   virtual bool GetNext(PuffData* data, Error* error) = 0;
 
-  // Returns the number of bytes read and processes from the puff buffer.
-  virtual size_t Offset() const = 0;
+  // Returns the number of bytes left in the puff buffer.
+  virtual size_t BytesLeft() const = 0;
 };
 
 class BufferPuffReader : public PuffReaderInterface {
@@ -49,7 +49,7 @@ class BufferPuffReader : public PuffReaderInterface {
   ~BufferPuffReader() override = default;
 
   bool GetNext(PuffData* pd, Error* error) override;
-  size_t Offset() const override;
+  size_t BytesLeft() const override;
 
  private:
   // The pointer to the puffed stream. This should not be deallocated.

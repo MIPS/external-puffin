@@ -134,7 +134,7 @@ TEST(PuffIOTest, InputOutputTest) {
   ASSERT_EQ(pd.type, PuffData::Type::kEndOfBlock);
   ASSERT_EQ(pd.byte, 5);
 
-  ASSERT_EQ(pr.Offset(), pw.Size());
+  ASSERT_EQ(buf.size() - pr.BytesLeft(), pw.Size());
 }
 
 // Testing boundary

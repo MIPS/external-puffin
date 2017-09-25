@@ -32,13 +32,14 @@ void BufferBitReader::DropBits(size_t nbits) {
 }
 
 uint8_t BufferBitReader::ReadBoundaryBits() {
-  uint32_t out_bits = 0;
-  if (in_cache_bits_ & 7) {
-    out_bits = in_cache_ & ((1 << (in_cache_bits_ & 7)) - 1);
-    in_cache_ >>= in_cache_bits_ & 7;
-    in_cache_bits_ -= in_cache_bits_ & 7;
-  }
-  return out_bits;
+  return in_cache_ & ((1 << (in_cache_bits_ & 7)) - 1);
+}
+
+size_t BufferBitReader::SkipBoundaryBits() {
+  size_t nbits = in_cache_bits_ & 7;
+  in_cache_ >>= nbits;
+  in_cache_bits_ -= nbits;
+  return nbits;
 }
 
 bool BufferBitReader::GetByteReaderFn(

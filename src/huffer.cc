@@ -35,8 +35,7 @@ bool Huffer::HuffDeflate(const uint8_t* puff_buf,
 
   TEST_AND_RETURN_FALSE(HuffDeflate(&pr, &bw, error));
   TEST_AND_RETURN_FALSE_SET_ERROR(bw.Flush(), Error::kInsufficientOutput);
-  TEST_AND_RETURN_FALSE_SET_ERROR(puff_size == pr.Offset(),
-                                  Error::kInvalidInput);
+  TEST_AND_RETURN_FALSE_SET_ERROR(pr.BytesLeft() == 0, Error::kInvalidInput);
   TEST_AND_RETURN_FALSE_SET_ERROR(comp_size == bw.Size(), Error::kInvalidInput);
   return true;
 }
@@ -48,11 +47,8 @@ bool Huffer::HuffDeflate(PuffReaderInterface* pr,
   bool reading_uncompressed_block = false;
   PuffData pd;
   HuffmanTable* cur_ht = nullptr;
-  uint8_t last_final_bit = 0;
-
-  // Is set when the end of deflate stream is reached.
-  bool stream_ended = false;
-  while (!stream_ended) {
+  // If no bytes left for PuffReader to read, bail out.
+  while (pr->BytesLeft() != 0) {
     TEST_AND_RETURN_FALSE(pr->GetNext(&pd, error));
 
     // The first data should be a metadata.
@@ -60,12 +56,6 @@ bool Huffer::HuffDeflate(PuffReaderInterface* pr,
                                     Error::kInvalidInput);
     auto header = pd.block_metadata[0];
     auto final_bit = (header & 0x80) >> 7;
-    if (final_bit == 1) {
-      // The final bit is set only once.
-      TEST_AND_RETURN_FALSE_SET_ERROR(last_final_bit == 0,
-                                      Error::kInvalidInput);
-    }
-    last_final_bit = final_bit;
     auto type = static_cast<BlockType>((header & 0x60) >> 5);
     DVLOG(2) << "Write block type: " << BlockTypeToString(type);
 
@@ -210,15 +200,14 @@ bool Huffer::HuffDeflate(PuffReaderInterface* pr,
             TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBits(nbits, eos_huffman),
                                             Error::kInsufficientInput);
           }
-          block_ended = true;
-
           if (final_bit == 1) {
             if (!reading_uncompressed_block) {
               TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBoundaryBits(pd.byte),
                                               Error::kInsufficientInput);
             }
-            stream_ended = true;
           }
+
+          block_ended = true;
           break;
 
         case PuffData::Type::kBlockMetadata:
@@ -230,6 +219,16 @@ bool Huffer::HuffDeflate(PuffReaderInterface* pr,
           LOG(ERROR) << "Invalid block data type!";
           *error = Error::kInvalidInput;
           return false;
+      }
+    }
+
+    // Now block ended so we have to see if we don't have anything else to read,
+    // then write the boundary bits if it is not an uncompressed blocks.
+    if (pr->BytesLeft() == 0) {
+      if (!reading_uncompressed_block) {
+        // |pd| is still valid here so we can read it.
+        TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBoundaryBits(pd.byte),
+                                        Error::kInsufficientInput);
       }
     }
   }

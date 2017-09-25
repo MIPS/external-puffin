@@ -111,8 +111,8 @@ bool BufferPuffReader::GetNext(PuffData* data, Error* error) {
   return true;
 }
 
-size_t BufferPuffReader::Offset() const {
-  return index_;
+size_t BufferPuffReader::BytesLeft() const {
+  return puff_size_ - index_;
 }
 
 }  // namespace puffin
