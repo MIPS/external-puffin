@@ -24,8 +24,8 @@ namespace puffin {
 //                     |PuffDiff| finishes.
 // |puffin_patch| OUT  The patch that later can be used in |PuffPatch|.
 PUFFIN_EXPORT
-bool PuffDiff(const UniqueStreamPtr& src,
-              const UniqueStreamPtr& dst,
+bool PuffDiff(UniqueStreamPtr src,
+              UniqueStreamPtr dst,
               const std::vector<ByteExtent>& src_deflates,
               const std::vector<ByteExtent>& dst_deflates,
               const std::string& tmp_filepath,

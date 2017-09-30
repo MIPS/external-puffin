@@ -12,8 +12,8 @@
 #include <iostream>
 #include <string>
 
-#include "puffin/src/include/puffin/huffer.h"
-#include "puffin/src/include/puffin/puffer.h"
+#include "puffin/src/bit_reader.h"
+#include "puffin/src/puff_writer.h"
 #include "puffin/src/set_errors.h"
 
 namespace puffin {
@@ -77,12 +77,14 @@ bool PrintSample(Puffer* puffer,
   PrintArray("compressed", comp);
 
   Buffer puff(original.size() * 3 + 10);
-  auto puff_size = puff.size();
   puffin::Error error;
-  TEST_AND_RETURN_FALSE(puffer->PuffDeflate(
-      comp.data(), comp.size(), puff.data(), &puff_size, &error));
 
-  puff.resize(puff_size);
+  BufferBitReader bit_reader(comp.data(), comp.size());
+  BufferPuffWriter puff_writer(puff.data(), puff.size());
+  TEST_AND_RETURN_FALSE(puffer->PuffDeflate(&bit_reader, &puff_writer, &error));
+  TEST_AND_RETURN_FALSE(comp.size() == bit_reader.Offset());
+
+  puff.resize(puff_writer.Size());
   PrintArray("puffed", puff);
   return true;
 }

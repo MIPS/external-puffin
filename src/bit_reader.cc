@@ -50,7 +50,9 @@ bool BufferBitReader::GetByteReaderFn(
   TEST_AND_RETURN_FALSE(length <= in_size_ - index_);
   *read_fn = [this, length](uint8_t* buffer, size_t count) mutable {
     TEST_AND_RETURN_FALSE(count <= length);
-    memcpy(buffer, &in_buf_[index_], count);
+    if (buffer != nullptr) {
+      memcpy(buffer, &in_buf_[index_], count);
+    }
     index_ += count;
     length -= count;
     return true;

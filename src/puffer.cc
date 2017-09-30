@@ -27,104 +27,6 @@ Puffer::Puffer() : dyn_ht_(new HuffmanTable()), fix_ht_(new HuffmanTable()) {}
 
 Puffer::~Puffer() {}
 
-// We assume |deflates| are sorted by their offset value.
-bool Puffer::Puff(const UniqueStreamPtr& src,
-                  const UniqueStreamPtr& dst,
-                  const vector<ByteExtent>& deflates,
-                  vector<ByteExtent>* puffs,
-                  Error* error) const {
-  *error = Error::kSuccess;
-  size_t max_deflate_length = 0;
-  for (const auto& deflate : deflates) {
-    max_deflate_length =
-        std::max(static_cast<uint64_t>(max_deflate_length), deflate.length);
-  }
-  // This should barely happen but for precaution we resize to bigger buffer.
-  Buffer deflate_buffer(max_deflate_length);
-  Buffer puff_buffer(max_deflate_length * 2 + 100);
-
-  auto cur_deflate = deflates.cbegin();
-  size_t src_size;
-  TEST_AND_RETURN_FALSE_SET_ERROR(src->GetSize(&src_size), Error::kStreamIO);
-  while (true) {
-    size_t src_offset;
-    TEST_AND_RETURN_FALSE_SET_ERROR(src->GetOffset(&src_offset),
-                                    Error::kStreamIO);
-    if (src_offset >= src_size) {
-      break;
-    }
-    size_t next_offset =
-        (cur_deflate == deflates.cend()) ? src_size : cur_deflate->offset;
-
-    // Copy non-deflate data into puff buffer.
-    auto len = next_offset - src_offset;
-    while (len > 0) {
-      auto min_len = std::min(len, puff_buffer.size());
-      // Write min bytes from src into dst.
-      TEST_AND_RETURN_FALSE_SET_ERROR(src->Read(puff_buffer.data(), min_len),
-                                      Error::kStreamIO);
-      TEST_AND_RETURN_FALSE_SET_ERROR(dst->Write(puff_buffer.data(), min_len),
-                                      Error::kStreamIO);
-      len -= min_len;
-    }
-    TEST_AND_RETURN_FALSE_SET_ERROR(src->GetOffset(&src_offset),
-                                    Error::kStreamIO);
-    if (src_offset >= src_size) {
-      return true;
-    }
-
-    // Read from src into deflate_buffer;
-    TEST_AND_RETURN_FALSE_SET_ERROR(
-        src->Read(deflate_buffer.data(), cur_deflate->length),
-        Error::kStreamIO);
-    // Deflate the stream and retry if it fails.
-    size_t deflate_size = cur_deflate->length;
-    auto puff_size = puff_buffer.size();
-    // Check if the error was insufficient output, retry.
-    while (!PuffDeflate(deflate_buffer.data(),
-                        deflate_size,
-                        puff_buffer.data(),
-                        &puff_size,
-                        error)) {
-      TEST_AND_RETURN_FALSE(*error == Error::kInsufficientOutput);
-      // This will not fall into an infinite loop.
-      LOG(WARNING) << "Insufficient puff buffer: " << puff_buffer.size()
-                   << ". Retrying with: " << puff_buffer.size() * 2;
-      puff_buffer.resize(puff_buffer.size() * 2);
-      puff_size = puff_buffer.size();
-    }
-
-    // Add the location into puff.
-    size_t offset;
-    TEST_AND_RETURN_FALSE_SET_ERROR(dst->GetOffset(&offset), Error::kStreamIO);
-    puffs->emplace_back(offset, puff_size);
-
-    // Write into destination;
-    TEST_AND_RETURN_FALSE_SET_ERROR(dst->Write(puff_buffer.data(), puff_size),
-                                    Error::kStreamIO);
-    // Move to next deflate;
-    cur_deflate++;
-  }
-  return true;
-}
-
-bool Puffer::PuffDeflate(const uint8_t* comp_buf,
-                         size_t comp_size,
-                         uint8_t* puff_buf,
-                         size_t* puff_size,
-                         Error* error) const {
-  BufferBitReader br(comp_buf, comp_size);
-  BufferPuffWriter pw(puff_buf, *puff_size);
-
-  TEST_AND_RETURN_FALSE(PuffDeflate(&br, &pw, error));
-  TEST_AND_RETURN_FALSE_SET_ERROR(comp_size == br.Offset(),
-                                  Error::kInvalidInput);
-
-  TEST_AND_RETURN_FALSE(pw.Flush(error));
-  *puff_size = pw.Size();
-  return true;
-}
-
 bool Puffer::PuffDeflate(BitReaderInterface* br,
                          PuffWriterInterface* pw,
                          Error* error) const {
@@ -139,9 +41,10 @@ bool Puffer::PuffDeflate(BitReaderInterface* br,
                                     Error::kInsufficientInput);
     uint8_t final_bit = br->ReadBits(1);  // BFINAL
     br->DropBits(1);
-    auto type = static_cast<BlockType>(br->ReadBits(2));  // BTYPE
+    uint8_t type = br->ReadBits(2);  // BTYPE
     br->DropBits(2);
-    DVLOG(2) << "Read block type: " << BlockTypeToString(type);
+    DVLOG(2) << "Read block type: "
+             << BlockTypeToString(static_cast<BlockType>(type));
 
     // Header structure
     // +-+-+-+-+-+-+-+-+
@@ -150,8 +53,8 @@ bool Puffer::PuffDeflate(BitReaderInterface* br,
     // F -> final_bit
     // TP -> type
     // SKIP -> skipped_bits (only in kUncompressed type)
-    uint8_t block_header = (final_bit << 7) | (static_cast<uint8_t>(type) << 5);
-    switch (type) {
+    auto block_header = (final_bit << 7) | (type << 5);
+    switch (static_cast<BlockType>(type)) {
       case BlockType::kUncompressed: {
         auto skipped_bits = br->ReadBoundaryBits();
         br->SkipBoundaryBits();
@@ -296,6 +199,7 @@ bool Puffer::PuffDeflate(BitReaderInterface* br,
       }
     }
   }
+  TEST_AND_RETURN_FALSE(pw->Flush(error));
   return true;
 }
 

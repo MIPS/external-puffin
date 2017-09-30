@@ -11,11 +11,61 @@
 
 namespace puffin {
 
+namespace {
+void TestLiteralLength(size_t length) {
+  Buffer buf(length + 10);
+  PuffData pd;
+  Error error;
+
+  BufferPuffWriter pw(buf.data(), buf.size());
+  // We need to insert a metadata otherwise it will fail.
+  pd.type = PuffData::Type::kBlockMetadata;
+  pd.length = 1;
+  ASSERT_TRUE(pw.Insert(pd, &error));
+
+  BufferPuffReader pr(buf.data(), buf.size());
+  ASSERT_TRUE(pr.GetNext(&pd, &error));
+  ASSERT_EQ(pd.type, PuffData::Type::kBlockMetadata);
+  ASSERT_EQ(pd.length, 1);
+
+  // We insert |length| bytes.
+  pd.type = PuffData::Type::kLiterals;
+  pd.length = length;
+  pd.read_fn = [](uint8_t* buffer, size_t count) {
+    std::fill(buffer, buffer + count, 10);
+    return true;
+  };
+  ASSERT_TRUE(pw.Insert(pd, &error));
+  ASSERT_TRUE(pw.Flush(&error));
+
+  pd.type = PuffData::Type::kLenDist;
+  pd.distance = 1;
+  pd.length = 3;
+  ASSERT_TRUE(pw.Insert(pd, &error));
+
+  ASSERT_TRUE(pr.GetNext(&pd, &error));
+  if (length == 0) {
+    // If length is zero, then nothing should've been inserted.
+    ASSERT_EQ(pd.type, PuffData::Type::kLenDist);
+  } else {
+    // We have to see |length| bytes.
+    ASSERT_EQ(pd.type, PuffData::Type::kLiterals);
+    ASSERT_EQ(pd.length, length);
+    for (size_t i = 0; i < pd.length; i++) {
+      uint8_t byte;
+      pd.read_fn(&byte, 1);
+      EXPECT_EQ(byte, 10);
+    }
+  }
+}
+}  // namespace
+
 // Testing read/write from/into a puff buffer using |PuffReader|/|PuffWriter|.
 TEST(PuffIOTest, InputOutputTest) {
   Buffer buf(100);
   BufferPuffReader pr(buf.data(), buf.size());
   BufferPuffWriter pw(buf.data(), buf.size());
+  BufferPuffWriter epw(nullptr, 0);
   Error error;
   uint8_t block = 123;
 
@@ -26,7 +76,9 @@ TEST(PuffIOTest, InputOutputTest) {
     memcpy(&pd.block_metadata[1], &block, sizeof(block));
     pd.length = sizeof(block) + 1;
     ASSERT_TRUE(pw.Insert(pd, &error));
-    pw.Flush(&error);
+    ASSERT_TRUE(epw.Insert(pd, &error));
+    ASSERT_TRUE(pw.Flush(&error));
+    ASSERT_TRUE(epw.Flush(&error));
   }
   {
     PuffData pd;
@@ -42,14 +94,19 @@ TEST(PuffIOTest, InputOutputTest) {
     pd.distance = 321;
     pd.length = 3;
     ASSERT_TRUE(pw.Insert(pd, &error));
+    ASSERT_TRUE(epw.Insert(pd, &error));
     pd.length = 127;
     ASSERT_TRUE(pw.Insert(pd, &error));
+    ASSERT_TRUE(epw.Insert(pd, &error));
     pd.length = 258;
     ASSERT_TRUE(pw.Insert(pd, &error));
-    pw.Flush(&error);
+    ASSERT_TRUE(epw.Insert(pd, &error));
+    ASSERT_TRUE(pw.Flush(&error));
+    ASSERT_TRUE(epw.Flush(&error));
 
     pd.length = 259;
     ASSERT_FALSE(pw.Insert(pd, &error));
+    ASSERT_FALSE(epw.Insert(pd, &error));
   }
   {
     PuffData pd;
@@ -68,7 +125,9 @@ TEST(PuffIOTest, InputOutputTest) {
     PuffData pd;
     pd.type = PuffData::Type::kEndOfBlock;
     ASSERT_TRUE(pw.Insert(pd, &error));
-    pw.Flush(&error);
+    ASSERT_TRUE(epw.Insert(pd, &error));
+    ASSERT_TRUE(pw.Flush(&error));
+    ASSERT_TRUE(epw.Flush(&error));
   }
   {
     PuffData pd;
@@ -83,7 +142,9 @@ TEST(PuffIOTest, InputOutputTest) {
     memcpy(&pd.block_metadata[1], &block, sizeof(block));
     pd.length = sizeof(block) + 1;
     ASSERT_TRUE(pw.Insert(pd, &error));
-    pw.Flush(&error);
+    ASSERT_TRUE(epw.Insert(pd, &error));
+    ASSERT_TRUE(pw.Flush(&error));
+    ASSERT_TRUE(epw.Flush(&error));
   }
   {
     PuffData pd;
@@ -103,19 +164,27 @@ TEST(PuffIOTest, InputOutputTest) {
     pd.read_fn = [&tmp, &index](uint8_t* buffer, size_t count) {
       if (count > 3 - index)
         return false;
-      memcpy(buffer, &tmp[index], count);
+      if (buffer != nullptr) {
+        memcpy(buffer, &tmp[index], count);
+      }
       index += count;
       return true;
     };
     ASSERT_TRUE(pw.Insert(pd, &error));
     ASSERT_TRUE(pw.Flush(&error));
+    // We have to refresh the read_fn function for the second insert.
+    index = 0;
+    ASSERT_TRUE(epw.Insert(pd, &error));
+    ASSERT_TRUE(epw.Flush(&error));
   }
   {
     PuffData pd;
     pd.type = PuffData::Type::kLiteral;
     pd.byte = 10;
     ASSERT_TRUE(pw.Insert(pd, &error));
+    ASSERT_TRUE(epw.Insert(pd, &error));
     ASSERT_TRUE(pw.Flush(&error));
+    ASSERT_TRUE(epw.Flush(&error));
   }
 
   uint8_t tmp3[3];
@@ -142,16 +211,19 @@ TEST(PuffIOTest, InputOutputTest) {
     pd.type = PuffData::Type::kEndOfBlock;
     pd.byte = 5;
     ASSERT_TRUE(pw.Insert(pd, &error));
-    pw.Flush(&error);
+    ASSERT_TRUE(epw.Insert(pd, &error));
+    ASSERT_TRUE(pw.Flush(&error));
+    ASSERT_TRUE(epw.Flush(&error));
   }
   {
     PuffData pd;
     ASSERT_TRUE(pr.GetNext(&pd, &error));
     ASSERT_EQ(pd.type, PuffData::Type::kEndOfBlock);
     ASSERT_EQ(pd.byte, 5);
-
-    ASSERT_EQ(buf.size() - pr.BytesLeft(), pw.Size());
   }
+
+  ASSERT_EQ(buf.size() - pr.BytesLeft(), pw.Size());
+  ASSERT_EQ(buf.size() - pr.BytesLeft(), epw.Size());
 }
 
 // Testing boundary
@@ -185,8 +257,17 @@ TEST(PuffIOTest, BoundaryTest) {
   // TODO(ahassani): Boundary check for literals and lendist.
 }
 
-// Testing literals length.
-TEST(PuffIOTest, LiteralsLengthTest) {
+TEST(PuffIOTest, LiteralsTest) {
+  TestLiteralLength(0);
+  TestLiteralLength(1);
+  TestLiteralLength(2);
+  TestLiteralLength(126);
+  TestLiteralLength(127);
+  TestLiteralLength(128);
+}
+
+// Testing maximum literals length.
+TEST(PuffIOTest, MaxLiteralsTest) {
   Buffer buf((1 << 16) + 127 + 20);
   PuffData pd;
   Error error;
@@ -198,17 +279,11 @@ TEST(PuffIOTest, LiteralsLengthTest) {
   ASSERT_TRUE(pw.Insert(pd, &error));
 
   pd.type = PuffData::Type::kLiterals;
-  pd.length = (1 << 16) + 1;
+  pd.length = (1 << 16);
   pd.read_fn = [](uint8_t* buffer, size_t count) {
-    auto c_bytes = static_cast<uint8_t*>(buffer);
-    std::fill(c_bytes, c_bytes + count, 10);
+    std::fill(buffer, buffer + count, 10);
     return true;
   };
-
-  ASSERT_FALSE(pw.Insert(pd, &error));
-  ASSERT_EQ(error, Error::kInvalidInput);
-
-  pd.length = 1 << 16;
   ASSERT_TRUE(pw.Insert(pd, &error));
   ASSERT_TRUE(pw.Flush(&error));
 

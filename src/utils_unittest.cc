@@ -15,24 +15,47 @@ namespace puffin {
 
 using std::vector;
 
-class UtilsTest : public ::testing::Test {
- public:
-  void FindDeflatesInZlibBlocks(const Buffer& src,
-                                const vector<ByteExtent>& zlibs,
-                                const vector<ByteExtent>& deflates) {
-    SharedBufferPtr src_buf(new Buffer(src));
-    auto src_stream = MemoryStream::Create(src_buf, true, false);
-    vector<ByteExtent> deflates_out;
-    ASSERT_TRUE(LocateDeflatesInZlibBlocks(src_stream, zlibs, &deflates_out));
-    ASSERT_EQ(deflates, deflates_out);
-  }
-};
+namespace {
+void FindDeflatesInZlibBlocks(const Buffer& src,
+                              const vector<ByteExtent>& zlibs,
+                              const vector<ByteExtent>& deflates) {
+  SharedBufferPtr src_buf(new Buffer(src));
+  auto src_stream = MemoryStream::Create(src_buf, true, false);
+  vector<ByteExtent> deflates_out;
+  ASSERT_TRUE(LocateDeflatesInZlibBlocks(src_stream, zlibs, &deflates_out));
+  ASSERT_EQ(deflates, deflates_out);
+}
 
-TEST_F(UtilsTest, LocateDeflatesInZlibsTest) {
+void CheckFindPuffLocation(const Buffer& compressed,
+                           const vector<ByteExtent>& deflates,
+                           const vector<ByteExtent>& expected_puffs,
+                           size_t expected_puff_size) {
+  SharedBufferPtr def_buf(new Buffer(compressed));
+  auto src = MemoryStream::Create(def_buf, true, false);
+  vector<ByteExtent> puffs;
+  size_t puff_size;
+  ASSERT_TRUE(FindPuffLocations(src, deflates, &puffs, &puff_size));
+  EXPECT_EQ(puffs, expected_puffs);
+  EXPECT_EQ(puff_size, expected_puff_size);
+}
+}  // namespace
+
+TEST(UtilsTest, LocateDeflatesInZlibsTest) {
   Buffer empty;
   vector<ByteExtent> empty_zlibs;
   vector<ByteExtent> empty_deflates;
   FindDeflatesInZlibBlocks(empty, empty_zlibs, empty_deflates);
+}
+
+// Test Simple Puffing of the source.
+TEST(UtilsTest, FindPuffLocations1Test) {
+  CheckFindPuffLocation(kDeflates8, kDeflateExtents8, kPuffExtents8,
+                        kPuffs8.size());
+}
+
+TEST(UtilsTest, FindPuffLocations2Test) {
+  CheckFindPuffLocation(kDeflates9, kDeflateExtents9, kPuffExtents9,
+                        kPuffs9.size());
 }
 
 // TODO(ahassani): Test a proper zlib format.

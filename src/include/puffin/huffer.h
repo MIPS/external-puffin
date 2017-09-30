@@ -22,26 +22,13 @@ class PUFFIN_EXPORT Huffer {
   Huffer();
   ~Huffer();
 
-  // It creates a deflate buffer from a puffed buffer. It is the reverse of
+  // Creates a deflate buffer from a puffed buffer. It is the reverse of
   // |PuffDeflate|.
-  //
-  // |puff_buf|  IN  The puff buffer.
-  // |puff_size| IN  The size of the input puffed buffer.
-  // |comp_buf|  IN  The output deflate buffer.
-  // |comp_size| IN  The size of the deflate buffer.
-  // |error|     OUT The error code.
-  bool HuffDeflate(const uint8_t* puff_buf,
-                   size_t puff_size,
-                   uint8_t* comp_buf,
-                   size_t comp_size,
-                   Error* error) const;
-
- private:
-  // Internal method for creating deflate buffer from a puff buffer.
   bool HuffDeflate(PuffReaderInterface* pr,
                    BitWriterInterface* bw,
                    Error* error) const;
 
+ private:
   std::unique_ptr<HuffmanTable> dyn_ht_;
   std::unique_ptr<HuffmanTable> fix_ht_;
 

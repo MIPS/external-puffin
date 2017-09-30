@@ -29,6 +29,15 @@ bool LocateDeflatesInZlibBlocks(const UniqueStreamPtr& src,
                                 const std::vector<ByteExtent>& zlibs,
                                 std::vector<ByteExtent>* deflates);
 
+// Finds the location of puffs in the deflate stream |src| based on the location
+// of |deflates| and populates the |puffs|. We assume |deflates| are sorted by
+// their offset value. |out_puff_size| will be the size of the puff stream.
+PUFFIN_EXPORT
+bool FindPuffLocations(const UniqueStreamPtr& src,
+                       const std::vector<ByteExtent>& deflates,
+                       std::vector<ByteExtent>* puffs,
+                       size_t* out_puff_size);
+
 }  // namespace puffin
 
 #endif  // SRC_INCLUDE_PUFFIN_UTILS_H_

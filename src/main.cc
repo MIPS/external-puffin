@@ -25,7 +25,6 @@
 
 using std::vector;
 using std::string;
-using std::shared_ptr;
 using puffin::ByteExtent;
 using puffin::UniqueStreamPtr;
 using puffin::Error;
@@ -118,40 +117,37 @@ int main(int argc, char** argv) {
 
   vector<ByteExtent> puffs;
   if (FLAGS_operation == "puff") {
-    shared_ptr<Puffer> puffer(new Puffer());
+    auto puffer = std::make_shared<Puffer>();
     auto dst_stream = FileStream::Open(FLAGS_dst_file, false, true);
     TEST_AND_RETURN_VALUE(dst_stream, -1);
     if (dst_puffs.empty()) {
-      Error error;
-      TEST_AND_RETURN_VALUE(
-          puffer->Puff(
-              src_stream, dst_stream, src_deflates, &dst_puffs, &error),
-          -1);
+      size_t dst_puff_size;
+      TEST_AND_RETURN_VALUE(FindPuffLocations(src_stream, src_deflates,
+                                              &dst_puffs, &dst_puff_size),
+                            -1);
       LOG(INFO) << "dst_puffs: " << puffin::ByteExtentsToString(dst_puffs);
-    } else {
-      // Puff using the given puff_size.
-      auto reader = puffin::PuffinStream::CreateForPuff(std::move(src_stream),
-                                                        puffer,
-                                                        FLAGS_puff_size,
-                                                        src_deflates,
-                                                        dst_puffs);
-      puffin::Buffer buffer(1024 * 1024);
-      size_t bytes_wrote = 0;
-      while (bytes_wrote < FLAGS_puff_size) {
-        auto write_size = std::min(
-            buffer.size(), static_cast<size_t>(FLAGS_puff_size - bytes_wrote));
-        TEST_AND_RETURN_VALUE(reader->Read(buffer.data(), write_size), -1);
-        TEST_AND_RETURN_VALUE(dst_stream->Write(buffer.data(), write_size), -1);
-        bytes_wrote += write_size;
-      }
     }
+    // Puff using the given puff_size.
+    auto reader = puffin::PuffinStream::CreateForPuff(std::move(src_stream),
+                                                      puffer, FLAGS_puff_size,
+                                                      src_deflates, dst_puffs);
+    puffin::Buffer buffer(1024 * 1024);
+    size_t bytes_wrote = 0;
+    while (bytes_wrote < FLAGS_puff_size) {
+      auto write_size = std::min(
+          buffer.size(), static_cast<size_t>(FLAGS_puff_size - bytes_wrote));
+      TEST_AND_RETURN_VALUE(reader->Read(buffer.data(), write_size), -1);
+      TEST_AND_RETURN_VALUE(dst_stream->Write(buffer.data(), write_size), -1);
+      bytes_wrote += write_size;
+    }
+
   } else if (FLAGS_operation == "huff") {
     size_t src_stream_size;
     TEST_AND_RETURN_VALUE(src_stream->GetSize(&src_stream_size), -1);
     auto dst_file = FileStream::Open(FLAGS_dst_file, false, true);
     TEST_AND_RETURN_VALUE(dst_file, -1);
 
-    shared_ptr<Huffer> huffer(new Huffer());
+    auto huffer = std::make_shared<Huffer>();
     auto dst_stream = puffin::PuffinStream::CreateForHuff(
         std::move(dst_file), huffer, src_stream_size, dst_deflates, src_puffs);
 
@@ -168,13 +164,11 @@ int main(int argc, char** argv) {
     TEST_AND_RETURN_VALUE(dst_stream, -1);
 
     puffin::Buffer puffdiff_delta;
-    TEST_AND_RETURN_VALUE(puffin::PuffDiff(src_stream,
-                                           dst_stream,
-                                           src_deflates,
-                                           dst_deflates,
-                                           "/tmp/patch.tmp",
-                                           &puffdiff_delta),
-                          -1);
+    TEST_AND_RETURN_VALUE(
+        puffin::PuffDiff(std::move(src_stream), std::move(dst_stream),
+                         src_deflates, dst_deflates, "/tmp/patch.tmp",
+                         &puffdiff_delta),
+        -1);
 
     LOG(INFO) << "patch size: " << puffdiff_delta.size();
     auto patch_stream = FileStream::Open(FLAGS_patch_file, false, true);

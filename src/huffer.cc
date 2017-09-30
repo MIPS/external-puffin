@@ -25,26 +25,10 @@ Huffer::Huffer() : dyn_ht_(new HuffmanTable()), fix_ht_(new HuffmanTable()) {}
 
 Huffer::~Huffer() {}
 
-bool Huffer::HuffDeflate(const uint8_t* puff_buf,
-                         size_t puff_size,
-                         uint8_t* comp_buf,
-                         size_t comp_size,
-                         Error* error) const {
-  BufferPuffReader pr(puff_buf, puff_size);
-  BufferBitWriter bw(comp_buf, comp_size);
-
-  TEST_AND_RETURN_FALSE(HuffDeflate(&pr, &bw, error));
-  TEST_AND_RETURN_FALSE_SET_ERROR(bw.Flush(), Error::kInsufficientOutput);
-  TEST_AND_RETURN_FALSE_SET_ERROR(pr.BytesLeft() == 0, Error::kInvalidInput);
-  TEST_AND_RETURN_FALSE_SET_ERROR(comp_size == bw.Size(), Error::kInvalidInput);
-  return true;
-}
-
 bool Huffer::HuffDeflate(PuffReaderInterface* pr,
                          BitWriterInterface* bw,
                          Error* error) const {
   *error = Error::kSuccess;
-  bool reading_uncompressed_block = false;
   PuffData pd;
   HuffmanTable* cur_ht = nullptr;
   // If no bytes left for PuffReader to read, bail out.
@@ -56,32 +40,55 @@ bool Huffer::HuffDeflate(PuffReaderInterface* pr,
                                     Error::kInvalidInput);
     auto header = pd.block_metadata[0];
     auto final_bit = (header & 0x80) >> 7;
-    auto type = static_cast<BlockType>((header & 0x60) >> 5);
-    DVLOG(2) << "Write block type: " << BlockTypeToString(type);
-
+    auto type = (header & 0x60) >> 5;
     auto skipped_bits = header & 0x1F;
+    DVLOG(2) << "Write block type: "
+             << BlockTypeToString(static_cast<BlockType>(type));
+
     TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBits(1, final_bit),
                                     Error::kInsufficientInput);
-    TEST_AND_RETURN_FALSE_SET_ERROR(
-        bw->WriteBits(2, static_cast<uint8_t>(type)),
-        Error::kInsufficientInput);
-    switch (type) {
+    TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBits(2, type),
+                                    Error::kInsufficientInput);
+    switch (static_cast<BlockType>(type)) {
       case BlockType::kUncompressed:
         bw->WriteBoundaryBits(skipped_bits);
-        reading_uncompressed_block = true;
-        break;
+        TEST_AND_RETURN_FALSE(pr->GetNext(&pd, error));
+        TEST_AND_RETURN_FALSE_SET_ERROR(pd.type != PuffData::Type::kLiteral,
+                                        Error::kInvalidInput);
+
+        if (pd.type == PuffData::Type::kLiterals) {
+          TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBits(16, pd.length),
+                                          Error::kInsufficientOutput);
+          TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBits(16, ~pd.length),
+                                          Error::kInsufficientOutput);
+          TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBytes(pd.length, pd.read_fn),
+                                          Error::kInsufficientOutput);
+          // Reading end of block, but don't write anything.
+          TEST_AND_RETURN_FALSE(pr->GetNext(&pd, error));
+          TEST_AND_RETURN_FALSE_SET_ERROR(
+              pd.type == PuffData::Type::kEndOfBlock, Error::kInvalidInput);
+        } else if (pd.type == PuffData::Type::kEndOfBlock) {
+          TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBits(16, 0),
+                                          Error::kInsufficientOutput);
+          TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBits(16, ~0),
+                                          Error::kInsufficientOutput);
+        } else {
+          LOG(ERROR) << "Uncompressed block did not end properly!";
+          *error = Error::kInvalidInput;
+          return false;
+        }
+        // We have to read a new block.
+        continue;
 
       case BlockType::kFixed:
         fix_ht_->BuildFixedHuffmanTable();
         cur_ht = fix_ht_.get();
-        reading_uncompressed_block = false;
         break;
 
       case BlockType::kDynamic:
         cur_ht = dyn_ht_.get();
         TEST_AND_RETURN_FALSE(dyn_ht_->BuildDynamicHuffmanTable(
             &pd.block_metadata[1], pd.length - 1, bw, error));
-        reading_uncompressed_block = false;
         break;
 
       default:
@@ -98,42 +105,31 @@ bool Huffer::HuffDeflate(PuffReaderInterface* pr,
       TEST_AND_RETURN_FALSE(pr->GetNext(&pd, error));
       switch (pd.type) {
         case PuffData::Type::kLiteral:
-        case PuffData::Type::kLiterals:
-          if (!reading_uncompressed_block) {
-            auto write_literal = [&cur_ht, &bw, &error](uint8_t literal) {
-              uint16_t literal_huffman;
-              size_t nbits;
-              TEST_AND_RETURN_FALSE_SET_ERROR(
-                  cur_ht->LitLenHuffman(literal, &literal_huffman, &nbits),
-                  Error::kInvalidInput);
-              TEST_AND_RETURN_FALSE_SET_ERROR(
-                  bw->WriteBits(nbits, literal_huffman),
-                  Error::kInsufficientOutput);
-              return true;
-            };
-
-            if (pd.type == PuffData::Type::kLiteral) {
-              TEST_AND_RETURN_FALSE(write_literal(pd.byte));
-            } else {
-              auto len = pd.length;
-              while (len-- > 0) {
-                uint8_t literal;
-                pd.read_fn(&literal, 1);
-                TEST_AND_RETURN_FALSE(write_literal(literal));
-              }
-            }
-          } else {
-            // This happens only once for each uncompressed block.
-            TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBits(16, pd.length),
-                                            Error::kInsufficientOutput);
-            TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBits(16, ~pd.length),
-                                            Error::kInsufficientOutput);
+        case PuffData::Type::kLiterals: {
+          auto write_literal = [&cur_ht, &bw, &error](uint8_t literal) {
+            uint16_t literal_huffman;
+            size_t nbits;
             TEST_AND_RETURN_FALSE_SET_ERROR(
-                bw->WriteBytes(pd.length, pd.read_fn),
+                cur_ht->LitLenHuffman(literal, &literal_huffman, &nbits),
+                Error::kInvalidInput);
+            TEST_AND_RETURN_FALSE_SET_ERROR(
+                bw->WriteBits(nbits, literal_huffman),
                 Error::kInsufficientOutput);
+            return true;
+          };
+
+          if (pd.type == PuffData::Type::kLiteral) {
+            TEST_AND_RETURN_FALSE(write_literal(pd.byte));
+          } else {
+            auto len = pd.length;
+            while (len-- > 0) {
+              uint8_t literal;
+              pd.read_fn(&literal, 1);
+              TEST_AND_RETURN_FALSE(write_literal(literal));
+            }
           }
           break;
-
+        }
         case PuffData::Type::kLenDist: {
           auto len = pd.length;
           auto dist = pd.distance;
@@ -190,26 +186,21 @@ bool Huffer::HuffDeflate(PuffReaderInterface* pr,
           break;
         }
 
-        case PuffData::Type::kEndOfBlock:
-          if (!reading_uncompressed_block) {
-            uint16_t eos_huffman;
-            size_t nbits;
-            TEST_AND_RETURN_FALSE_SET_ERROR(
-                cur_ht->LitLenHuffman(256, &eos_huffman, &nbits),
-                Error::kInvalidInput);
-            TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBits(nbits, eos_huffman),
+        case PuffData::Type::kEndOfBlock: {
+          uint16_t eos_huffman;
+          size_t nbits;
+          TEST_AND_RETURN_FALSE_SET_ERROR(
+              cur_ht->LitLenHuffman(256, &eos_huffman, &nbits),
+              Error::kInvalidInput);
+          TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBits(nbits, eos_huffman),
+                                          Error::kInsufficientInput);
+          if (final_bit == 1) {
+            TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBoundaryBits(pd.byte),
                                             Error::kInsufficientInput);
           }
-          if (final_bit == 1) {
-            if (!reading_uncompressed_block) {
-              TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBoundaryBits(pd.byte),
-                                              Error::kInsufficientInput);
-            }
-          }
-
           block_ended = true;
           break;
-
+        }
         case PuffData::Type::kBlockMetadata:
           LOG(ERROR) << "Not expecing a metadata!";
           *error = Error::kInvalidInput;
@@ -225,14 +216,13 @@ bool Huffer::HuffDeflate(PuffReaderInterface* pr,
     // Now block ended so we have to see if we don't have anything else to read,
     // then write the boundary bits if it is not an uncompressed blocks.
     if (pr->BytesLeft() == 0) {
-      if (!reading_uncompressed_block) {
-        // |pd| is still valid here so we can read it.
-        TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBoundaryBits(pd.byte),
-                                        Error::kInsufficientInput);
-      }
+      // |pd| is still valid here so we can read it.
+      TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBoundaryBits(pd.byte),
+                                      Error::kInsufficientInput);
     }
   }
 
+  TEST_AND_RETURN_FALSE_SET_ERROR(bw->Flush(), Error::kInsufficientOutput);
   return true;
 }
 

@@ -27,7 +27,6 @@ namespace puffin {
 
 using std::string;
 using std::vector;
-using std::shared_ptr;
 
 namespace {
 
@@ -149,8 +148,8 @@ bool PuffPatch(UniqueStreamPtr src,
                                     &dst_puffs,
                                     &src_puff_size,
                                     &dst_puff_size));
-  shared_ptr<Puffer> puffer(new Puffer());
-  shared_ptr<Huffer> huffer(new Huffer());
+  auto puffer = std::make_shared<Puffer>();
+  auto huffer = std::make_shared<Huffer>();
 
   // For reading from source.
   auto puffin_reader = PuffinStream::CreateForPuff(

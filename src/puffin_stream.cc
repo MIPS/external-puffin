@@ -10,10 +10,14 @@
 #include <utility>
 #include <vector>
 
+#include "puffin/src/bit_reader.h"
+#include "puffin/src/bit_writer.h"
 #include "puffin/src/include/puffin/common.h"
 #include "puffin/src/include/puffin/huffer.h"
 #include "puffin/src/include/puffin/puffer.h"
 #include "puffin/src/include/puffin/stream.h"
+#include "puffin/src/puff_reader.h"
+#include "puffin/src/puff_writer.h"
 #include "puffin/src/set_errors.h"
 
 namespace puffin {
@@ -176,17 +180,17 @@ bool PuffinStream::Read(void* buffer, size_t length) {
 
       TEST_AND_RETURN_FALSE(
           stream_->Read(deflate_buffer_->data(), cur_deflate_->length));
-      // We already know the puff size, so if it fails, we bail out.
+
+      BufferBitReader bit_reader(deflate_buffer_->data(), cur_deflate_->length);
+      BufferPuffWriter puff_writer(puff_directly_into_buffer
+                                       ? c_bytes + bytes_read
+                                       : puff_buffer_->data(),
+                                   cur_puff_->length);
       Error error;
-      size_t puff_size = cur_puff_->length;
-      TEST_AND_RETURN_FALSE(puffer_->PuffDeflate(
-          deflate_buffer_->data(),
-          cur_deflate_->length,
-          (puff_directly_into_buffer ? c_bytes + bytes_read
-                                     : puff_buffer_->data()),
-          &puff_size,
-          &error));
-      TEST_AND_RETURN_FALSE(puff_size == cur_puff_->length);
+      TEST_AND_RETURN_FALSE(
+          puffer_->PuffDeflate(&bit_reader, &puff_writer, &error));
+      TEST_AND_RETURN_FALSE(cur_deflate_->length == bit_reader.Offset());
+      TEST_AND_RETURN_FALSE(cur_puff_->length == puff_writer.Size());
 
       auto bytes_to_copy = std::min(
           length - bytes_read,
@@ -254,12 +258,15 @@ bool PuffinStream::Write(const void* buffer, size_t length) {
       cur_puff_bytes_wrote += copy_len;
       if (cur_puff_bytes_wrote == cur_puff_->length) {
         // |puff_buffer_| is full, now huff into the |deflate_buffer_|.
+        BufferPuffReader puff_reader(puff_buffer_->data(), cur_puff_->length);
+        BufferBitWriter bit_writer(deflate_buffer_->data(),
+                                   cur_deflate_->length);
+
         Error error;
-        TEST_AND_RETURN_FALSE(huffer_->HuffDeflate(puff_buffer_->data(),
-                                                   cur_puff_->length,
-                                                   deflate_buffer_->data(),
-                                                   cur_deflate_->length,
-                                                   &error));
+        TEST_AND_RETURN_FALSE(
+            huffer_->HuffDeflate(&puff_reader, &bit_writer, &error));
+        TEST_AND_RETURN_FALSE(bit_writer.Size() == cur_deflate_->length);
+        TEST_AND_RETURN_FALSE(puff_reader.BytesLeft() == 0);
         // Write |deflate_buffer_| into output.
         TEST_AND_RETURN_FALSE(
             stream_->Write(deflate_buffer_->data(), cur_deflate_->length));

@@ -12,13 +12,17 @@
 
 #include "gtest/gtest.h"
 
+#include "puffin/src/bit_reader.h"
+#include "puffin/src/bit_writer.h"
 #include "puffin/src/include/puffin/common.h"
 #include "puffin/src/include/puffin/huffer.h"
 #include "puffin/src/include/puffin/puffdiff.h"
 #include "puffin/src/include/puffin/puffer.h"
 #include "puffin/src/include/puffin/puffpatch.h"
 #include "puffin/src/include/puffin/stream.h"
+#include "puffin/src/include/puffin/utils.h"
 #include "puffin/src/puff_reader.h"
+#include "puffin/src/puff_writer.h"
 #include "puffin/src/sample_generator.h"
 #include "puffin/src/set_errors.h"
 #include "puffin/src/unittest_common.h"
@@ -37,14 +41,15 @@ class PuffinTest : public ::testing::Test {
                       size_t* puff_size,
                       uint8_t* out_buf,
                       size_t* out_size) {
-    BufferPuffReader pr(static_cast<const uint8_t*>(puff_buf), *puff_size);
+    BufferPuffReader puff_reader(static_cast<const uint8_t*>(puff_buf),
+                                 *puff_size);
     auto start = static_cast<uint8_t*>(out_buf);
 
     PuffData pd;
     uint8_t final_bit = 0;
     Error error;
-    while (pr.BytesLeft() != 0) {
-      TEST_AND_RETURN_FALSE(pr.GetNext(&pd, &error));
+    while (puff_reader.BytesLeft() != 0) {
+      TEST_AND_RETURN_FALSE(puff_reader.GetNext(&pd, &error));
       switch (pd.type) {
         case PuffData::Type::kLiteral:
           *start = pd.byte;
@@ -76,7 +81,41 @@ class PuffinTest : public ::testing::Test {
       }
     }
     *out_size = start - static_cast<uint8_t*>(out_buf);
-    *puff_size = *puff_size - pr.BytesLeft();
+    *puff_size = *puff_size - puff_reader.BytesLeft();
+    return true;
+  }
+
+  bool PuffDeflate(const uint8_t* comp_buf,
+                   size_t comp_size,
+                   uint8_t* puff_buf,
+                   size_t puff_size,
+                   Error* error) const {
+    BufferBitReader bit_reader(comp_buf, comp_size);
+    BufferPuffWriter puff_writer(puff_buf, puff_size);
+
+    TEST_AND_RETURN_FALSE(
+        puffer_.PuffDeflate(&bit_reader, &puff_writer, error));
+    TEST_AND_RETURN_FALSE_SET_ERROR(comp_size == bit_reader.Offset(),
+                                    Error::kInvalidInput);
+    TEST_AND_RETURN_FALSE_SET_ERROR(puff_size = puff_writer.Size(),
+                                    Error::kInvalidInput);
+    return true;
+  }
+
+  bool HuffDeflate(const uint8_t* puff_buf,
+                   size_t puff_size,
+                   uint8_t* comp_buf,
+                   size_t comp_size,
+                   Error* error) const {
+    BufferPuffReader puff_reader(puff_buf, puff_size);
+    BufferBitWriter bit_writer(comp_buf, comp_size);
+
+    TEST_AND_RETURN_FALSE(
+        huffer_.HuffDeflate(&puff_reader, &bit_writer, error));
+    TEST_AND_RETURN_FALSE_SET_ERROR(comp_size == bit_writer.Size(),
+                                    Error::kInvalidInput);
+    TEST_AND_RETURN_FALSE_SET_ERROR(puff_reader.BytesLeft() == 0,
+                                    Error::kInvalidInput);
     return true;
   }
 
@@ -89,8 +128,8 @@ class PuffinTest : public ::testing::Test {
     auto comp_size = compressed.size();
     auto puff_size = out_puff->size();
     Error error;
-    ASSERT_TRUE(puffer_.PuffDeflate(
-        compressed.data(), comp_size, out_puff->data(), &puff_size, &error));
+    ASSERT_TRUE(PuffDeflate(compressed.data(), comp_size, out_puff->data(),
+                            puff_size, &error));
     ASSERT_EQ(puff_size, expected_puff.size());
     out_puff->resize(puff_size);
     ASSERT_EQ(expected_puff, *out_puff);
@@ -104,8 +143,8 @@ class PuffinTest : public ::testing::Test {
     auto comp_size = compressed.size();
     auto puff_size = out_puff->size();
     Error error;
-    ASSERT_FALSE(puffer_.PuffDeflate(
-        compressed.data(), comp_size, out_puff->data(), &puff_size, &error));
+    ASSERT_FALSE(PuffDeflate(compressed.data(), comp_size, out_puff->data(),
+                             puff_size, &error));
     ASSERT_EQ(error, expected_error);
   }
 
@@ -118,8 +157,8 @@ class PuffinTest : public ::testing::Test {
     auto huff_size = out_huff->size();
     auto puffed_size = puffed.size();
     Error error;
-    ASSERT_TRUE(huffer_.HuffDeflate(
-        puffed.data(), puffed_size, out_huff->data(), huff_size, &error));
+    ASSERT_TRUE(HuffDeflate(puffed.data(), puffed_size, out_huff->data(),
+                            huff_size, &error));
     ASSERT_EQ(expected_huff, *out_huff);
   }
 
@@ -131,8 +170,8 @@ class PuffinTest : public ::testing::Test {
     auto comp_size = out_compress->size();
     auto puff_size = puffed.size();
     Error error;
-    ASSERT_TRUE(huffer_.HuffDeflate(
-        puffed.data(), puff_size, out_compress->data(), comp_size, &error));
+    ASSERT_TRUE(HuffDeflate(puffed.data(), puff_size, out_compress->data(),
+                            comp_size, &error));
     ASSERT_EQ(error, expected_error);
   }
 
@@ -174,12 +213,8 @@ class PuffinTest : public ::testing::Test {
     Buffer patch_out;
     string patch_path = "/tmp/patch.tmp";
     ScopedPathUnlinker scoped_unlinker(patch_path);
-    ASSERT_TRUE(PuffDiff(src_stream,
-                         dst_stream,
-                         src_deflates,
-                         dst_deflates,
-                         patch_path,
-                         &patch_out));
+    ASSERT_TRUE(PuffDiff(std::move(src_stream), std::move(dst_stream),
+                         src_deflates, dst_deflates, patch_path, &patch_out));
 
 #if PRINT_SAMPLE
     sample_generator::PrintArray("kPatchXXXXX", patch_out);
@@ -187,6 +222,7 @@ class PuffinTest : public ::testing::Test {
 
     ASSERT_EQ(patch_out, patch);
 
+    src_stream = MemoryStream::Create(src_buf_ptr, true, false);
     SharedBufferPtr dst_buf_ptr2(new Buffer());
     auto dst_stream2 = MemoryStream::Create(dst_buf_ptr2, false, true);
     ASSERT_TRUE(PuffPatch(std::move(src_stream),
@@ -204,6 +240,11 @@ class PuffinTest : public ::testing::Test {
 // Tests a simple buffer with uncompressed deflate block.
 TEST_F(PuffinTest, UncompressedTest) {
   CheckSample(kRaw1, kDeflate1, kPuff1);
+}
+
+// Tests a simple buffer with uncompressed deflate block with length zero.
+TEST_F(PuffinTest, ZeroLengthUncompressedTest) {
+  CheckSample(kRaw1_1, kDeflate1_1, kPuff1_1);
 }
 
 // Tests a dynamically compressed buffer with only one literal.
@@ -262,35 +303,6 @@ TEST_F(PuffinTest, MultipleDeflateBufferBothFinalBitTest) {
 
 // TODO(ahassani): Add unittest for testing end of stream and end of stream
 // bits.
-
-// Test Simple Puffing of the source.
-TEST_F(PuffinTest, SimplePuff1Test) {
-  SharedBufferPtr def_buf(new Buffer(kDeflates8));
-  auto src = MemoryStream::Create(def_buf, true, false);
-
-  SharedBufferPtr puff_buf(new Buffer(kPuffs8.size(), 0));
-  auto dst = MemoryStream::Create(puff_buf, false, true);
-
-  Error error;
-  vector<ByteExtent> puffs;
-  puffer_.Puff(src, dst, kDeflateExtents8, &puffs, &error);
-  ASSERT_EQ(*puff_buf, kPuffs8);
-  ASSERT_EQ(puffs, kPuffExtents8);
-}
-
-TEST_F(PuffinTest, SimplePuff2Test) {
-  SharedBufferPtr def_buf(new Buffer(kDeflates9));
-  auto src = MemoryStream::Create(def_buf, true, false);
-
-  SharedBufferPtr puff_buf(new Buffer(kPuffs9.size()));
-  auto dst = MemoryStream::Create(puff_buf, false, true);
-
-  Error error;
-  vector<ByteExtent> puffs;
-  puffer_.Puff(src, dst, kDeflateExtents9, &puffs, &error);
-  ASSERT_EQ(*puff_buf, kPuffs9);
-  ASSERT_EQ(puffs, kPuffExtents9);
-}
 
 TEST_F(PuffinTest, Patching8To9Test) {
   TestPatching(

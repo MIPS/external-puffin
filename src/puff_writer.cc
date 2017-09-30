@@ -27,11 +27,9 @@ constexpr size_t kLiteralsMaxLength = (1 << 16) + 127;  // 65663
 bool BufferPuffWriter::Insert(const PuffData& pd, Error* error) {
   switch (pd.type) {
     case PuffData::Type::kLiterals:
-      // We only insert kLiterals for uncompressed blocks. But the length of an
-      // uncompressed block cannot be larger than 2^16 (65KB). Also before
-      // inserting a |kLiterals|, we should call |FlushLiterals|.
-      TEST_AND_RETURN_FALSE_SET_ERROR(pd.length <= (1 << 16),
-                                      Error::kInvalidInput);
+      if (pd.length == 0) {
+        return true;
+      }
     // We don't break here. It will be processed in kLiteral;
     case PuffData::Type::kLiteral: {
       DVLOG(2) << "Write literals length: " << pd.length;
@@ -42,31 +40,37 @@ bool BufferPuffWriter::Insert(const PuffData& pd, Error* error) {
         state_ = State::kWritingSmallLiteral;
       }
       if (state_ == State::kWritingSmallLiteral) {
-        if ((index_ - len_index_ - 1 + length) >= 127) {
-          // Boundary check
-          TEST_AND_RETURN_FALSE_SET_ERROR(index_ + 2 <= puff_size_,
-                                          Error::kInsufficientOutput);
+        if ((cur_literals_length_ + length) > 127) {
+          if (puff_buf_out_ != nullptr) {
+            // Boundary check
+            TEST_AND_RETURN_FALSE_SET_ERROR(index_ + 2 <= puff_size_,
+                                            Error::kInsufficientOutput);
 
-          // Shift two bytes forward to open space for length value.
-          memmove(&puff_buf_out_[len_index_ + 3],
-                  &puff_buf_out_[len_index_ + 1],
-                  index_ - len_index_ - 1);
+            // Shift two bytes forward to open space for length value.
+            memmove(&puff_buf_out_[len_index_ + 3],
+                    &puff_buf_out_[len_index_ + 1], cur_literals_length_);
+          }
           index_ += 2;
           state_ = State::kWritingLargeLiteral;
         }
       }
 
-      // Boundary check
-      TEST_AND_RETURN_FALSE_SET_ERROR(index_ + length <= puff_size_,
-                                      Error::kInsufficientOutput);
-
-      if (pd.type == PuffData::Type::kLiteral) {
-        puff_buf_out_[index_] = pd.byte;
-      } else {
-        TEST_AND_RETURN_FALSE_SET_ERROR(
-            pd.read_fn(&puff_buf_out_[index_], length),
-            Error::kInsufficientInput);
+      if (puff_buf_out_ != nullptr) {
+        // Boundary check
+        TEST_AND_RETURN_FALSE_SET_ERROR(index_ + length <= puff_size_,
+                                        Error::kInsufficientOutput);
+        if (pd.type == PuffData::Type::kLiteral) {
+          puff_buf_out_[index_] = pd.byte;
+        } else {
+          TEST_AND_RETURN_FALSE_SET_ERROR(
+              pd.read_fn(&puff_buf_out_[index_], length),
+              Error::kInsufficientInput);
+        }
+      } else if (pd.type == PuffData::Type::kLiterals) {
+        TEST_AND_RETURN_FALSE_SET_ERROR(pd.read_fn(nullptr, length),
+                                        Error::kInsufficientInput);
       }
+
       index_ += length;
       cur_literals_length_ += length;
 
@@ -83,24 +87,33 @@ bool BufferPuffWriter::Insert(const PuffData& pd, Error* error) {
       TEST_AND_RETURN_FALSE(FlushLiterals(error));
       TEST_AND_RETURN_FALSE_SET_ERROR(pd.length < 259, Error::kInvalidInput);
       if (pd.length < 130) {
-        // Boundary check
-        TEST_AND_RETURN_FALSE_SET_ERROR(index_ + 3 <= puff_size_,
-                                        Error::kInsufficientOutput);
+        if (puff_buf_out_ != nullptr) {
+          // Boundary check
+          TEST_AND_RETURN_FALSE_SET_ERROR(index_ + 3 <= puff_size_,
+                                          Error::kInsufficientOutput);
 
-        puff_buf_out_[index_++] =
-            kLenDistHeader | static_cast<uint8_t>(pd.length - 3);
+          puff_buf_out_[index_++] =
+              kLenDistHeader | static_cast<uint8_t>(pd.length - 3);
+        } else {
+          index_++;
+        }
       } else {
-        // Boundary check
-        TEST_AND_RETURN_FALSE_SET_ERROR(index_ + 4 <= puff_size_,
-                                        Error::kInsufficientOutput);
+        if (puff_buf_out_ != nullptr) {
+          // Boundary check
+          TEST_AND_RETURN_FALSE_SET_ERROR(index_ + 4 <= puff_size_,
+                                          Error::kInsufficientOutput);
 
-        puff_buf_out_[index_++] = kLenDistHeader | 127;
-        puff_buf_out_[index_++] = static_cast<uint8_t>(pd.length - 3 - 127);
+          puff_buf_out_[index_++] = kLenDistHeader | 127;
+          puff_buf_out_[index_++] = static_cast<uint8_t>(pd.length - 3 - 127);
+        } else {
+          index_ += 2;
+        }
       }
 
-      WriteUint16ToByteArray(pd.distance, &puff_buf_out_[index_]);
+      if (puff_buf_out_ != nullptr) {
+        WriteUint16ToByteArray(pd.distance, &puff_buf_out_[index_]);
+      }
       index_ += 2;
-
       len_index_ = index_;
       state_ = State::kWritingNonLiteral;
       break;
@@ -108,17 +121,19 @@ bool BufferPuffWriter::Insert(const PuffData& pd, Error* error) {
     case PuffData::Type::kBlockMetadata:
       DVLOG(2) << "Write block metadata length: " << pd.length;
       TEST_AND_RETURN_FALSE(FlushLiterals(error));
-      // Boundary check
-      TEST_AND_RETURN_FALSE_SET_ERROR(index_ + pd.length + 2 <= puff_size_,
-                                      Error::kInsufficientOutput);
+      if (puff_buf_out_ != nullptr) {
+        // Boundary check
+        TEST_AND_RETURN_FALSE_SET_ERROR(index_ + pd.length + 2 <= puff_size_,
+                                        Error::kInsufficientOutput);
 
-      WriteUint16ToByteArray(pd.length - 1, &puff_buf_out_[index_]);
+        WriteUint16ToByteArray(pd.length - 1, &puff_buf_out_[index_]);
+      }
       index_ += 2;
 
-      if (pd.length > 0) {
+      if (puff_buf_out_ != nullptr) {
         memcpy(&puff_buf_out_[index_], pd.block_metadata, pd.length);
-        index_ += pd.length;
       }
+      index_ += pd.length;
       len_index_ = index_;
       state_ = State::kWritingNonLiteral;
       break;
@@ -126,14 +141,18 @@ bool BufferPuffWriter::Insert(const PuffData& pd, Error* error) {
     case PuffData::Type::kEndOfBlock:
       DVLOG(2) << "Write end of block";
       TEST_AND_RETURN_FALSE(FlushLiterals(error));
-      // Boundary check
-      TEST_AND_RETURN_FALSE_SET_ERROR(index_ + 4 <= puff_size_,
-                                      Error::kInsufficientOutput);
+      if (puff_buf_out_ != nullptr) {
+        // Boundary check
+        TEST_AND_RETURN_FALSE_SET_ERROR(index_ + 4 <= puff_size_,
+                                        Error::kInsufficientOutput);
 
-      puff_buf_out_[index_++] = kLenDistHeader | 127;
-      puff_buf_out_[index_++] = static_cast<uint8_t>(259 - 3 - 127);
-      WriteUint16ToByteArray(pd.byte, &puff_buf_out_[index_]);
-      index_ += 2;
+        puff_buf_out_[index_++] = kLenDistHeader | 127;
+        puff_buf_out_[index_++] = static_cast<uint8_t>(259 - 3 - 127);
+        WriteUint16ToByteArray(pd.byte, &puff_buf_out_[index_]);
+        index_ += 2;
+      } else {
+        index_ += 4;
+      }
 
       len_index_ = index_;
       state_ = State::kWritingNonLiteral;
@@ -157,8 +176,10 @@ bool BufferPuffWriter::FlushLiterals(Error* error) {
       TEST_AND_RETURN_FALSE_SET_ERROR(
           cur_literals_length_ == (index_ - len_index_ - 1),
           Error::kInvalidInput);
-      puff_buf_out_[len_index_] =
-          kLiteralsHeader | static_cast<uint8_t>(cur_literals_length_ - 1);
+      if (puff_buf_out_ != nullptr) {
+        puff_buf_out_[len_index_] =
+            kLiteralsHeader | static_cast<uint8_t>(cur_literals_length_ - 1);
+      }
       len_index_ = index_;
       state_ = State::kWritingNonLiteral;
       DVLOG(2) << "Write small literals length: " << cur_literals_length_;
@@ -168,10 +189,13 @@ bool BufferPuffWriter::FlushLiterals(Error* error) {
       TEST_AND_RETURN_FALSE_SET_ERROR(
           cur_literals_length_ == (index_ - len_index_ - 3),
           Error::kInvalidInput);
-      puff_buf_out_[len_index_++] = kLiteralsHeader | 127;
-      WriteUint16ToByteArray(
-          static_cast<uint16_t>(cur_literals_length_ - 127 - 1),
-          &puff_buf_out_[len_index_]);
+      if (puff_buf_out_ != nullptr) {
+        puff_buf_out_[len_index_++] = kLiteralsHeader | 127;
+        WriteUint16ToByteArray(
+            static_cast<uint16_t>(cur_literals_length_ - 127 - 1),
+            &puff_buf_out_[len_index_]);
+      }
+
       len_index_ = index_;
       state_ = State::kWritingNonLiteral;
       DVLOG(2) << "Write large literals length: " << cur_literals_length_;
