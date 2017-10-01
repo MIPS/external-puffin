@@ -38,11 +38,22 @@ using SharedBufferPtr = std::shared_ptr<Buffer>;
 // defined an extra class so the users of puffin do not have to include
 // puffin.pb.h and deal with its use.
 struct PUFFIN_EXPORT ByteExtent {
-  ByteExtent() = default;
   ByteExtent(uint64_t offset, uint64_t length)
       : offset(offset), length(length) {}
 
   bool operator==(const ByteExtent& other) const {
+    return this->length == other.length && this->offset == other.offset;
+  }
+
+  uint64_t offset;
+  uint64_t length;
+};
+
+struct PUFFIN_EXPORT BitExtent {
+  BitExtent(uint64_t offset, uint64_t length)
+      : offset(offset), length(length) {}
+
+  bool operator==(const BitExtent& other) const {
     return this->length == other.length && this->offset == other.offset;
   }
 

@@ -31,36 +31,38 @@ namespace {
 constexpr char kMagic[] = "PUF1";
 constexpr size_t kMagicLength = 4;
 
+template <typename T>
+void CopyVectorToRpf(
+    const T& from,
+    google::protobuf::RepeatedPtrField<metadata::BitExtent>* to,
+    size_t coef) {
+  to->Reserve(from.size());
+  for (const auto& ext : from) {
+    auto tmp = to->Add();
+    tmp->set_offset(ext.offset * coef);
+    tmp->set_length(ext.length * coef);
+  }
+}
+
 // Structure of a puffin patch
 // +-------+------------------+-------------+--------------+
 // |P|U|F|1| PatchHeader Size | PatchHeader | bsdiff_patch |
 // +-------+------------------+-------------+--------------+
 bool CreatePatch(const Buffer& bsdiff_patch,
-                 const vector<ByteExtent>& src_deflates,
-                 const vector<ByteExtent>& dst_deflates,
+                 const vector<BitExtent>& src_deflates,
+                 const vector<BitExtent>& dst_deflates,
                  const vector<ByteExtent>& src_puffs,
                  const vector<ByteExtent>& dst_puffs,
                  size_t src_puff_size,
                  size_t dst_puff_size,
                  Buffer* patch) {
-  PatchHeader header;
+  metadata::PatchHeader header;
   header.set_version(1);
 
-  auto copy_vector_to_rf =
-      [](const vector<ByteExtent>& from,
-         google::protobuf::RepeatedPtrField<ProtoByteExtent>* to) {
-        to->Reserve(from.size());
-        for (const auto& ext : from) {
-          auto tmp = to->Add();
-          tmp->set_offset(ext.offset);
-          tmp->set_length(ext.length);
-        }
-      };
-
-  copy_vector_to_rf(src_deflates, header.mutable_src()->mutable_deflates());
-  copy_vector_to_rf(dst_deflates, header.mutable_dst()->mutable_deflates());
-  copy_vector_to_rf(src_puffs, header.mutable_src()->mutable_puffs());
-  copy_vector_to_rf(dst_puffs, header.mutable_dst()->mutable_puffs());
+  CopyVectorToRpf(src_deflates, header.mutable_src()->mutable_deflates(), 1);
+  CopyVectorToRpf(dst_deflates, header.mutable_dst()->mutable_deflates(), 1);
+  CopyVectorToRpf(src_puffs, header.mutable_src()->mutable_puffs(), 8);
+  CopyVectorToRpf(dst_puffs, header.mutable_dst()->mutable_puffs(), 8);
 
   header.mutable_src()->set_puff_length(src_puff_size);
   header.mutable_dst()->set_puff_length(dst_puff_size);
@@ -95,13 +97,13 @@ bool CreatePatch(const Buffer& bsdiff_patch,
 
 bool PuffDiff(UniqueStreamPtr src,
               UniqueStreamPtr dst,
-              const vector<ByteExtent>& src_deflates,
-              const vector<ByteExtent>& dst_deflates,
+              const vector<BitExtent>& src_deflates,
+              const vector<BitExtent>& dst_deflates,
               const string& tmp_filepath,
               Buffer* patch) {
   auto puffer = std::make_shared<Puffer>();
   auto puff_deflate_stream =
-      [&puffer](UniqueStreamPtr stream, const vector<ByteExtent>& deflates,
+      [&puffer](UniqueStreamPtr stream, const vector<BitExtent>& deflates,
                 Buffer* puff_buffer, vector<ByteExtent>* puffs) {
         size_t puff_size;
         TEST_AND_RETURN_FALSE(stream->Seek(0));

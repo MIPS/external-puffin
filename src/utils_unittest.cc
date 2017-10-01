@@ -18,16 +18,16 @@ using std::vector;
 namespace {
 void FindDeflatesInZlibBlocks(const Buffer& src,
                               const vector<ByteExtent>& zlibs,
-                              const vector<ByteExtent>& deflates) {
+                              const vector<BitExtent>& deflates) {
   SharedBufferPtr src_buf(new Buffer(src));
   auto src_stream = MemoryStream::Create(src_buf, true, false);
-  vector<ByteExtent> deflates_out;
+  vector<BitExtent> deflates_out;
   ASSERT_TRUE(LocateDeflatesInZlibBlocks(src_stream, zlibs, &deflates_out));
   ASSERT_EQ(deflates, deflates_out);
 }
 
 void CheckFindPuffLocation(const Buffer& compressed,
-                           const vector<ByteExtent>& deflates,
+                           const vector<BitExtent>& deflates,
                            const vector<ByteExtent>& expected_puffs,
                            size_t expected_puff_size) {
   SharedBufferPtr def_buf(new Buffer(compressed));
@@ -43,18 +43,19 @@ void CheckFindPuffLocation(const Buffer& compressed,
 TEST(UtilsTest, LocateDeflatesInZlibsTest) {
   Buffer empty;
   vector<ByteExtent> empty_zlibs;
-  vector<ByteExtent> empty_deflates;
+  vector<BitExtent> empty_deflates;
   FindDeflatesInZlibBlocks(empty, empty_zlibs, empty_deflates);
 }
 
 // Test Simple Puffing of the source.
+
 TEST(UtilsTest, FindPuffLocations1Test) {
-  CheckFindPuffLocation(kDeflates8, kDeflateExtents8, kPuffExtents8,
+  CheckFindPuffLocation(kDeflates8, kSubblockDeflateExtents8, kPuffExtents8,
                         kPuffs8.size());
 }
 
 TEST(UtilsTest, FindPuffLocations2Test) {
-  CheckFindPuffLocation(kDeflates9, kDeflateExtents9, kPuffExtents9,
+  CheckFindPuffLocation(kDeflates9, kSubblockDeflateExtents9, kPuffExtents9,
                         kPuffs9.size());
 }
 

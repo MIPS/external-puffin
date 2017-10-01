@@ -194,10 +194,6 @@ bool Huffer::HuffDeflate(PuffReaderInterface* pr,
               Error::kInvalidInput);
           TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBits(nbits, eos_huffman),
                                           Error::kInsufficientInput);
-          if (final_bit == 1) {
-            TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBoundaryBits(pd.byte),
-                                            Error::kInsufficientInput);
-          }
           block_ended = true;
           break;
         }
@@ -211,14 +207,6 @@ bool Huffer::HuffDeflate(PuffReaderInterface* pr,
           *error = Error::kInvalidInput;
           return false;
       }
-    }
-
-    // Now block ended so we have to see if we don't have anything else to read,
-    // then write the boundary bits if it is not an uncompressed blocks.
-    if (pr->BytesLeft() == 0) {
-      // |pd| is still valid here so we can read it.
-      TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBoundaryBits(pd.byte),
-                                      Error::kInsufficientInput);
     }
   }
 

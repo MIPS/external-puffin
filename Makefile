@@ -17,6 +17,7 @@ PUFFIN_SOURCES = \
 UNITTEST_SOURCES = \
 	bit_io_unittest.cc \
 	puff_io_unittest.cc \
+	puffin_unittest.cc \
 	stream_unittest.cc \
 	testrunner.cc \
 	utils_unittest.cc

@@ -33,13 +33,24 @@ namespace {
 constexpr char kMagic[] = "PUF1";
 constexpr size_t kMagicLength = 4;
 
+template <typename T>
+void CopyRpfToVector(
+    const google::protobuf::RepeatedPtrField<metadata::BitExtent>& from,
+    T* to,
+    size_t coef) {
+  to->reserve(from.size());
+  for (const auto& ext : from) {
+    to->emplace_back(ext.offset() / coef, ext.length() / coef);
+  }
+}
+
 bool DecodePatch(const uint8_t* patch,
                  size_t patch_length,
                  size_t* bsdiff_patch_offset,
                  size_t* bsdiff_patch_size,
-                 vector<ByteExtent>* src_deflates,
+                 vector<BitExtent>* src_deflates,
+                 vector<BitExtent>* dst_deflates,
                  vector<ByteExtent>* src_puffs,
-                 vector<ByteExtent>* dst_deflates,
                  vector<ByteExtent>* dst_puffs,
                  size_t* src_puff_size,
                  size_t* dst_puff_size) {
@@ -57,23 +68,14 @@ bool DecodePatch(const uint8_t* patch,
   header_size = be32toh(header_size);
   offset += sizeof(header_size);
 
-  PatchHeader header;
+  metadata::PatchHeader header;
   TEST_AND_RETURN_FALSE(header.ParseFromArray(patch + offset, header_size));
   offset += header_size;
 
-  auto copy_rf_to_vector =
-      [](const google::protobuf::RepeatedPtrField<ProtoByteExtent>& from,
-         vector<ByteExtent>* to) {
-        to->reserve(from.size());
-        for (const auto& ext : from) {
-          to->emplace_back(ext.offset(), ext.length());
-        }
-      };
-
-  copy_rf_to_vector(header.src().deflates(), src_deflates);
-  copy_rf_to_vector(header.dst().deflates(), dst_deflates);
-  copy_rf_to_vector(header.src().puffs(), src_puffs);
-  copy_rf_to_vector(header.dst().puffs(), dst_puffs);
+  CopyRpfToVector(header.src().deflates(), src_deflates, 1);
+  CopyRpfToVector(header.dst().deflates(), dst_deflates, 1);
+  CopyRpfToVector(header.src().puffs(), src_puffs, 8);
+  CopyRpfToVector(header.dst().puffs(), dst_puffs, 8);
 
   *src_puff_size = header.src().puff_length();
   *dst_puff_size = header.dst().puff_length();
@@ -131,23 +133,15 @@ bool PuffPatch(UniqueStreamPtr src,
                size_t patch_length) {
   size_t bsdiff_patch_offset;  // bsdiff offset in |patch|.
   size_t bsdiff_patch_size = 0;
-  vector<ByteExtent> src_deflates;
-  vector<ByteExtent> src_puffs;
-  vector<ByteExtent> dst_deflates;
-  vector<ByteExtent> dst_puffs;
-  size_t src_puff_size;
-  size_t dst_puff_size;
+  vector<BitExtent> src_deflates, dst_deflates;
+  vector<ByteExtent> src_puffs, dst_puffs;
+  size_t src_puff_size, dst_puff_size;
+
   // Decode the patch and get the bsdiff_patch.
-  TEST_AND_RETURN_FALSE(DecodePatch(patch,
-                                    patch_length,
-                                    &bsdiff_patch_offset,
-                                    &bsdiff_patch_size,
-                                    &src_deflates,
-                                    &src_puffs,
-                                    &dst_deflates,
-                                    &dst_puffs,
-                                    &src_puff_size,
-                                    &dst_puff_size));
+  TEST_AND_RETURN_FALSE(DecodePatch(patch, patch_length, &bsdiff_patch_offset,
+                                    &bsdiff_patch_size, &src_deflates,
+                                    &dst_deflates, &src_puffs, &dst_puffs,
+                                    &src_puff_size, &dst_puff_size));
   auto puffer = std::make_shared<Puffer>();
   auto huffer = std::make_shared<Huffer>();
 

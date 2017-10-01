@@ -158,6 +158,7 @@
           'includes': ['../../platform2/common-mk/common_test.gypi'],
           'sources': [
             'src/bit_io_unittest.cc',
+            'src/patching_unittest.cc',
             'src/puff_io_unittest.cc',
             'src/puffin_unittest.cc',
             'src/stream_unittest.cc',

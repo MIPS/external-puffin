@@ -192,12 +192,9 @@ TEST_F(StreamTest, TestFileStream) {
 TEST_F(StreamTest, PuffinStreamTest) {
   SharedBufferPtr buf(new Buffer(kDeflates8));
   shared_ptr<Puffer> puffer(new Puffer());
-  auto read_stream =
-      PuffinStream::CreateForPuff(MemoryStream::Create(buf, true, false),
-                                  puffer,
-                                  kPuffs8.size(),
-                                  kDeflateExtents8,
-                                  kPuffExtents8);
+  auto read_stream = PuffinStream::CreateForPuff(
+      MemoryStream::Create(buf, true, false), puffer, kPuffs8.size(),
+      kSubblockDeflateExtents8, kPuffExtents8);
 
   TestRead(read_stream.get(), kPuffs8);
   TestSeek(read_stream.get(), false);
@@ -205,12 +202,9 @@ TEST_F(StreamTest, PuffinStreamTest) {
 
   SharedBufferPtr buf1(new Buffer(kDeflates8.size()));
   shared_ptr<Huffer> huffer(new Huffer());
-  auto write_stream =
-      PuffinStream::CreateForHuff(MemoryStream::Create(buf1, false, true),
-                                  huffer,
-                                  kPuffs8.size(),
-                                  kDeflateExtents8,
-                                  kPuffExtents8);
+  auto write_stream = PuffinStream::CreateForHuff(
+      MemoryStream::Create(buf1, false, true), huffer, kPuffs8.size(),
+      kSubblockDeflateExtents8, kPuffExtents8);
 
   ASSERT_TRUE(write_stream->Seek(0));
   for (size_t idx = 0; idx < kPuffs8.size(); idx++) {

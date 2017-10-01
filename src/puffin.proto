@@ -4,17 +4,17 @@
 
 syntax = "proto3";
 
-package puffin;
+package puffin.metadata;
 option optimize_for = LITE_RUNTIME;
 
-message ProtoByteExtent {
+message BitExtent {
   uint64 offset = 1;
   uint64 length = 2;
 }
 
 message StreamInfo {
-  repeated ProtoByteExtent deflates = 1;
-  repeated ProtoByteExtent puffs = 2;
+  repeated BitExtent deflates = 1;
+  repeated BitExtent puffs = 2;
   uint64 puff_length = 3;
 }
 

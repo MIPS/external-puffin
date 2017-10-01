@@ -22,14 +22,6 @@ namespace puffin {
 using std::string;
 using std::vector;
 
-string ByteExtentsToString(const vector<ByteExtent>& extents) {
-  string str;
-  for (const auto& extent : extents)
-    str += std::to_string(extent.offset) + ":" + std::to_string(extent.length) +
-           ",";
-  return str;
-}
-
 size_t BytesInByteExtents(const vector<ByteExtent>& extents) {
   size_t bytes = 0;
   for (const auto& extent : extents) {
@@ -42,7 +34,7 @@ size_t BytesInByteExtents(const vector<ByteExtent>& extents) {
 // definition of a zlib stream.
 bool LocateDeflatesInZlibBlocks(const UniqueStreamPtr& src,
                                 const vector<ByteExtent>& zlibs,
-                                vector<ByteExtent>* deflates) {
+                                vector<BitExtent>* deflates) {
   for (auto& zlib : zlibs) {
     TEST_AND_RETURN_FALSE(src->Seek(zlib.offset));
     uint16_t zlib_header;
@@ -86,16 +78,41 @@ bool LocateDeflatesInZlibBlocks(const UniqueStreamPtr& src,
       header_len += 4;
     }
 
-    ByteExtent deflate;
-    deflate.offset = zlib.offset + header_len;
-    deflate.length = zlib.length - header_len - 4;
-    deflates->push_back(deflate);
+    ByteExtent deflate(zlib.offset + header_len, zlib.length - header_len - 4);
+    TEST_AND_RETURN_FALSE(FindDeflateSubBlocks(src, {deflate}, deflates));
+  }
+  return true;
+}
+
+bool FindDeflateSubBlocks(const UniqueStreamPtr& src,
+                          const vector<ByteExtent>& deflates,
+                          vector<BitExtent>* subblock_deflates) {
+  Puffer puffer;
+  Buffer deflate_buffer;
+  for (const auto& deflate : deflates) {
+    TEST_AND_RETURN_FALSE(src->Seek(deflate.offset));
+    // Read from src into deflate_buffer.
+    deflate_buffer.resize(deflate.length);
+    TEST_AND_RETURN_FALSE(src->Read(deflate_buffer.data(), deflate.length));
+
+    // Find all the subblocks.
+    BufferBitReader bit_reader(deflate_buffer.data(), deflate.length);
+    BufferPuffWriter puff_writer(nullptr, 0);
+    Error error;
+    vector<BitExtent> subblocks;
+    TEST_AND_RETURN_FALSE(
+        puffer.PuffDeflate(&bit_reader, &puff_writer, &subblocks, &error));
+    TEST_AND_RETURN_FALSE(deflate.length == bit_reader.Offset());
+    for (const auto& subblock : subblocks) {
+      subblock_deflates->emplace_back(subblock.offset + deflate.offset * 8,
+                                      subblock.length);
+    }
   }
   return true;
 }
 
 bool FindPuffLocations(const UniqueStreamPtr& src,
-                       const vector<ByteExtent>& deflates,
+                       const vector<BitExtent>& deflates,
                        vector<ByteExtent>* puffs,
                        size_t* out_puff_size) {
   Puffer puffer;
@@ -106,25 +123,54 @@ bool FindPuffLocations(const UniqueStreamPtr& src,
   // deflate stream to get the size of the puff stream. We use signed size
   // because puff size could be smaller than deflate size.
   ssize_t total_size_difference = 0;
-  for (const auto& deflate : deflates) {
-    TEST_AND_RETURN_FALSE(src->Seek(deflate.offset));
+  for (auto deflate = deflates.begin(); deflate != deflates.end(); ++deflate) {
     // Read from src into deflate_buffer.
-    deflate_buffer.resize(deflate.length);
-    TEST_AND_RETURN_FALSE(src->Read(deflate_buffer.data(), deflate.length));
-
+    auto start_byte = deflate->offset / 8;
+    auto end_byte = (deflate->offset + deflate->length + 7) / 8;
+    deflate_buffer.resize(end_byte - start_byte);
+    TEST_AND_RETURN_FALSE(src->Seek(start_byte));
+    TEST_AND_RETURN_FALSE(
+        src->Read(deflate_buffer.data(), deflate_buffer.size()));
     // Find the size of the puff.
-    BufferBitReader bit_reader(deflate_buffer.data(), deflate.length);
+    BufferBitReader bit_reader(deflate_buffer.data(), deflate_buffer.size());
+    size_t bits_to_skip = deflate->offset % 8;
+    TEST_AND_RETURN_FALSE(bit_reader.CacheBits(bits_to_skip));
+    bit_reader.DropBits(bits_to_skip);
+
     BufferPuffWriter puff_writer(nullptr, 0);
     Error error;
     TEST_AND_RETURN_FALSE(
-        puffer.PuffDeflate(&bit_reader, &puff_writer, &error));
-    TEST_AND_RETURN_FALSE(deflate.length == bit_reader.Offset());
+        puffer.PuffDeflate(&bit_reader, &puff_writer, nullptr, &error));
+    TEST_AND_RETURN_FALSE(deflate_buffer.size() == bit_reader.Offset());
 
-    // Add the location into puff.
+    // 1 if a deflate ends at the same byte that the next deflate starts and
+    // there is a few bits gap between them. In practice this may never happen,
+    // but it is a good idea to support it anyways. If there is a gap, the value
+    // of the gap will be saved as an integer byte to the puff stream. The parts
+    // of the byte that belogs to the deflates are shifted out.
+    int gap = 0;
+    if (deflate != deflates.begin()) {
+      auto prev_deflate = std::prev(deflate);
+      if ((prev_deflate->offset + prev_deflate->length == deflate->offset)
+          // If deflates are on byte boundary the gap will not be counted later,
+          // so we won't worry about it.
+          && (deflate->offset % 8 != 0)) {
+        gap = 1;
+      }
+    }
+
+    start_byte = ((deflate->offset + 7) / 8);
+    end_byte = (deflate->offset + deflate->length) / 8;
+    ssize_t deflate_length_in_bytes = end_byte - start_byte;
+
+    // If there was no gap bits between the current and previous deflates, there
+    // will be no extra gap byte, so the offset will be shifted one byte back.
+    auto puff_offset = start_byte - gap + total_size_difference;
     auto puff_size = puff_writer.Size();
-    puffs->emplace_back(deflate.offset + total_size_difference, puff_size);
+    // Add the location into puff.
+    puffs->emplace_back(puff_offset, puff_size);
     total_size_difference +=
-        static_cast<ssize_t>(puff_size) - static_cast<ssize_t>(deflate.length);
+        static_cast<ssize_t>(puff_size) - deflate_length_in_bytes - gap;
   }
 
   size_t src_size;

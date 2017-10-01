@@ -209,7 +209,6 @@ TEST(PuffIOTest, InputOutputTest) {
   {
     PuffData pd;
     pd.type = PuffData::Type::kEndOfBlock;
-    pd.byte = 5;
     ASSERT_TRUE(pw.Insert(pd, &error));
     ASSERT_TRUE(epw.Insert(pd, &error));
     ASSERT_TRUE(pw.Flush(&error));
@@ -219,7 +218,6 @@ TEST(PuffIOTest, InputOutputTest) {
     PuffData pd;
     ASSERT_TRUE(pr.GetNext(&pd, &error));
     ASSERT_EQ(pd.type, PuffData::Type::kEndOfBlock);
-    ASSERT_EQ(pd.byte, 5);
   }
 
   ASSERT_EQ(buf.size() - pr.BytesLeft(), pw.Size());

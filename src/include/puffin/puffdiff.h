@@ -26,8 +26,8 @@ namespace puffin {
 PUFFIN_EXPORT
 bool PuffDiff(UniqueStreamPtr src,
               UniqueStreamPtr dst,
-              const std::vector<ByteExtent>& src_deflates,
-              const std::vector<ByteExtent>& dst_deflates,
+              const std::vector<BitExtent>& src_deflates,
+              const std::vector<BitExtent>& dst_deflates,
               const std::string& tmp_filepath,
               Buffer* patch);
 

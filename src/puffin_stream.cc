@@ -30,9 +30,10 @@ UniqueStreamPtr PuffinStream::CreateForPuff(
     UniqueStreamPtr stream,
     std::shared_ptr<Puffer> puffer,
     size_t puff_size,
-    const std::vector<ByteExtent>& deflates,
+    const std::vector<BitExtent>& deflates,
     const std::vector<ByteExtent>& puffs) {
   TEST_AND_RETURN_VALUE(puffs.size() == deflates.size(), nullptr);
+  TEST_AND_RETURN_VALUE(stream->Seek(0), nullptr);
 
   UniqueStreamPtr puffin_stream(new PuffinStream(
       std::move(stream), puffer, nullptr, puff_size, deflates, puffs));
@@ -44,9 +45,10 @@ UniqueStreamPtr PuffinStream::CreateForHuff(
     UniqueStreamPtr stream,
     std::shared_ptr<Huffer> huffer,
     size_t puff_size,
-    const std::vector<ByteExtent>& deflates,
+    const std::vector<BitExtent>& deflates,
     const std::vector<ByteExtent>& puffs) {
   TEST_AND_RETURN_VALUE(puffs.size() == deflates.size(), nullptr);
+  TEST_AND_RETURN_VALUE(stream->Seek(0), nullptr);
 
   UniqueStreamPtr puffin_stream(new PuffinStream(
       std::move(stream), nullptr, huffer, puff_size, deflates, puffs));
@@ -58,7 +60,7 @@ PuffinStream::PuffinStream(UniqueStreamPtr stream,
                            shared_ptr<Puffer> puffer,
                            shared_ptr<Huffer> huffer,
                            size_t puff_size,
-                           const vector<ByteExtent>& deflates,
+                           const vector<BitExtent>& deflates,
                            const vector<ByteExtent>& puffs)
     : stream_(std::move(stream)),
       puffer_(puffer),
@@ -67,25 +69,38 @@ PuffinStream::PuffinStream(UniqueStreamPtr stream,
       deflates_(deflates),
       puffs_(puffs),
       puff_pos_(0),
-      deflate_pos_(0),
+      skip_bytes_(0),
+      deflate_bit_pos_(0),
+      last_byte_(0),
+      extra_byte_(0),
       is_for_puff_(puffer_ ? true : false),
       closed_(false) {
-  // Look for the largest puff extent and get a cache with at least that size.
+  // We can pass the size of the deflate stream too, but it is not necessary
+  // yet. We cannot get the size of stream from itself, because we might be
+  // writing into it and its size is not defined yet.
+  size_t deflate_stream_size = puff_stream_size_;
+  if (!puffs.empty()) {
+    deflate_stream_size =
+        ((deflates.back().offset + deflates.back().length) / 8) +
+        puff_stream_size_ - (puffs.back().offset + puffs.back().length);
+  }
+
+  deflates_.emplace_back(deflate_stream_size * 8, 0);
+  puffs_.emplace_back(puff_stream_size_, 0);
+
+  // Look for the largest puff and deflate extents and get proper size buffers.
   size_t max_puff_length = 0;
   for (const auto& puff : puffs) {
     max_puff_length =
         std::max(max_puff_length, static_cast<size_t>(puff.length));
   }
-  puff_buffer_.reset(new Buffer(max_puff_length));
-
-  // Look for the largest deflate extent and get a cache with at least that
-  // size.
+  puff_buffer_.reset(new Buffer(max_puff_length + 1));
   size_t max_deflate_length = 0;
   for (const auto& deflate : deflates) {
     max_deflate_length =
-        std::max(max_deflate_length, static_cast<size_t>(deflate.length));
+        std::max(max_deflate_length, static_cast<size_t>(deflate.length * 8));
   }
-  deflate_buffer_.reset(new Buffer(max_deflate_length));
+  deflate_buffer_.reset(new Buffer(max_deflate_length + 2));
 }
 
 bool PuffinStream::GetSize(size_t* size) const {
@@ -94,37 +109,52 @@ bool PuffinStream::GetSize(size_t* size) const {
 }
 
 bool PuffinStream::GetOffset(size_t* offset) const {
-  *offset = puff_pos_;
+  *offset = puff_pos_ + skip_bytes_;
   return true;
 }
 
 bool PuffinStream::Seek(size_t offset) {
   TEST_AND_RETURN_FALSE(!closed_);
   if (!is_for_puff_) {
-    // For huffing we should not seek, only seek to zero is accepted or seek to
-    // the same offset.
-    TEST_AND_RETURN_FALSE(offset == 0 || puff_pos_ == offset);
+    // For huffing we should not seek, only seek to zero is accepted
+    TEST_AND_RETURN_FALSE(offset == 0);
   }
 
   TEST_AND_RETURN_FALSE(offset <= puff_stream_size_);
-  auto next_puff = puffs_.size();
-  if (!puffs_.empty()) {
-    // We are searching backwards for the first available puff which either
-    // includes the |offset| or it is the next available puff after |offset|.
-    for (ssize_t idx = puffs_.size() - 1; idx >= 0; idx--) {
-      if (offset < puffs_[idx].offset + puffs_[idx].length) {
-        next_puff = idx;
-      } else {
-        break;
-      }
+  // We are searching backwards for the first available puff which either
+  // includes the |offset| or it is the next available puff after |offset|.
+  // TODO(*): This can be improved by binary search.
+  ssize_t next_puff = puffs_.size() - 1;
+  for (ssize_t idx = puffs_.size() - 1; idx >= 0; idx--) {
+    if (offset < puffs_[idx].offset + puffs_[idx].length) {
+      next_puff = idx;
+    } else {
+      break;
     }
   }
   cur_puff_ = std::next(puffs_.begin(), next_puff);
   cur_deflate_ = std::next(deflates_.begin(), next_puff);
 
-  puff_pos_ = offset;
-  if (offset == 0) {
-    TEST_AND_RETURN_FALSE(stream_->Seek(deflate_pos_));
+  if (offset < cur_puff_->offset) {
+    // between two puffs.
+    puff_pos_ = offset;
+    auto back_track_bytes = cur_puff_->offset - puff_pos_;
+    deflate_bit_pos_ = ((cur_deflate_->offset + 7) / 8 - back_track_bytes) * 8;
+    if (cur_puff_ != puffs_.begin()) {
+      auto prev_deflate = std::prev(cur_deflate_);
+      if (deflate_bit_pos_ < prev_deflate->offset + prev_deflate->length) {
+        deflate_bit_pos_ = prev_deflate->offset + prev_deflate->length;
+      }
+    }
+  } else {
+    // Inside a puff.
+    puff_pos_ = cur_puff_->offset;
+    deflate_bit_pos_ = cur_deflate_->offset;
+  }
+  skip_bytes_ = offset - puff_pos_;
+  if (!is_for_puff_ && offset == 0) {
+    TEST_AND_RETURN_FALSE(stream_->Seek(0));
+    TEST_AND_RETURN_FALSE(SetExtraByte());
   }
   return true;
 }
@@ -137,155 +167,229 @@ bool PuffinStream::Close() {
 bool PuffinStream::Read(void* buffer, size_t length) {
   TEST_AND_RETURN_FALSE(!closed_);
   TEST_AND_RETURN_FALSE(is_for_puff_);
-  TEST_AND_RETURN_FALSE(puff_pos_ + length <= puff_stream_size_);
-  auto c_bytes = static_cast<uint8_t*>(buffer);
-  size_t start_byte_in_first_puff = 0;
-
-  // Figure out where in the puff stream the |puff_pos_| and |length| lies and
-  // find the corresponding deflate location.
   if (cur_puff_ == puffs_.end()) {
-    // Take care when |puffs_| is empty.
-    if (puffs_.empty()) {
-      deflate_pos_ = puff_pos_;
-    } else {
-      deflate_pos_ = puff_pos_ - (puffs_.back().offset + puffs_.back().length) +
-                     (deflates_.back().offset + deflates_.back().length);
-    }
-  } else if (puff_pos_ < cur_puff_->offset) {
-    // Between two puffs_.
-    deflate_pos_ = cur_deflate_->offset - (cur_puff_->offset - puff_pos_);
-  } else {
-    // Inside a puff.
-    deflate_pos_ = cur_deflate_->offset;
-    start_byte_in_first_puff = puff_pos_ - cur_puff_->offset;
+    TEST_AND_RETURN_FALSE(length == 0);
   }
-  TEST_AND_RETURN_FALSE(stream_->Seek(deflate_pos_));
-
+  auto bytes = static_cast<uint8_t*>(buffer);
   size_t bytes_read = 0;
   while (bytes_read < length) {
-    size_t cur_puff_offset =
-        (cur_puff_ != puffs_.end()) ? cur_puff_->offset : puff_stream_size_;
+    if (puff_pos_ < cur_puff_->offset) {
+      // Reading between two deflates. We also read bytes that have at least one
+      // bit of a deflate bit stream. The byte which has both deflate and raw
+      // data will be shifted or masked off the deflate bits and the remaining
+      // value will be saved in the puff stream as an byte integer.
+      size_t start_byte = (deflate_bit_pos_ / 8);
+      size_t end_byte = (cur_deflate_->offset + 7) / 8;
+      auto bytes_to_read = std::min(length - bytes_read, end_byte - start_byte);
+      TEST_AND_RETURN_FALSE(bytes_to_read >= 1);
 
-    if ((puff_pos_ + bytes_read) < cur_puff_offset) {
-      // Reading from between two deflate buffers.
-      auto bytes_to_read = std::min(length - bytes_read,
-                                    cur_puff_offset - (puff_pos_ + bytes_read));
-      TEST_AND_RETURN_FALSE(stream_->Read(c_bytes + bytes_read, bytes_to_read));
+      TEST_AND_RETURN_FALSE(stream_->Seek(start_byte));
+      TEST_AND_RETURN_FALSE(stream_->Read(bytes + bytes_read, bytes_to_read));
+
+      // If true, we read the first byte of the curret deflate. So we have to
+      // mask out the deflate bits (which are most significant bits.)
+      if ((start_byte + bytes_to_read) * 8 > cur_deflate_->offset) {
+        bytes[bytes_read + bytes_to_read - 1] &=
+            (1 << (cur_deflate_->offset & 7)) - 1;
+      }
+
+      // If true, we read the last byte of the previous deflate and we have to
+      // shift it out. The least significat bits belongs to the deflate
+      // stream. The order of these last two conditions are important because a
+      // byte can contain a finishing deflate and a starting deflate with some
+      // bits between them so we have to modify correctly. Keep in mind that in
+      // this situation both are modifying the same byte.
+      if (start_byte * 8 < deflate_bit_pos_) {
+        bytes[bytes_read] >>= deflate_bit_pos_ & 7;
+      }
+
+      // Pass |deflate_bit_pos_| for all the read bytes.
+      deflate_bit_pos_ -= deflate_bit_pos_ & 7;
+      deflate_bit_pos_ += bytes_to_read * 8;
+      if (deflate_bit_pos_ > cur_deflate_->offset) {
+        // In case it reads into the first byte of the current deflate.
+        deflate_bit_pos_ = cur_deflate_->offset;
+      }
+
       bytes_read += bytes_to_read;
+      puff_pos_ += bytes_to_read;
+      TEST_AND_RETURN_FALSE(puff_pos_ <= cur_puff_->offset);
     } else {
+      // Reading the deflate itself. We read all bytes including the first and
+      // last byte (which may partially include a deflate bit). Here we keep the
+      // |puff_pos_| point to the first byte of the puffed stream and
+      // |skip_bytes_| shows how many bytes in the puff we have copied till now.
+      auto start_byte = (cur_deflate_->offset / 8);
+      auto end_byte = (cur_deflate_->offset + cur_deflate_->length + 7) / 8;
+      auto bytes_to_read = end_byte - start_byte;
+
+      deflate_buffer_->resize(bytes_to_read);
+      TEST_AND_RETURN_FALSE(stream_->Seek(start_byte));
+      TEST_AND_RETURN_FALSE(
+          stream_->Read(deflate_buffer_->data(), bytes_to_read));
+      BufferBitReader bit_reader(deflate_buffer_->data(), bytes_to_read);
+
       // Puff directly to buffer if it has space.
       bool puff_directly_into_buffer =
-          (start_byte_in_first_puff == 0) &&
-          (length - bytes_read >= cur_puff_->length);
+          (skip_bytes_ == 0) && (length - bytes_read >= cur_puff_->length);
+      BufferPuffWriter puff_writer(
+          puff_directly_into_buffer ? bytes + bytes_read : puff_buffer_->data(),
+          cur_puff_->length);
 
-      TEST_AND_RETURN_FALSE(
-          stream_->Read(deflate_buffer_->data(), cur_deflate_->length));
+      // Drop the first unused bits.
+      size_t extra_bits_len = cur_deflate_->offset & 7;
+      TEST_AND_RETURN_FALSE(bit_reader.CacheBits(extra_bits_len));
+      bit_reader.DropBits(extra_bits_len);
 
-      BufferBitReader bit_reader(deflate_buffer_->data(), cur_deflate_->length);
-      BufferPuffWriter puff_writer(puff_directly_into_buffer
-                                       ? c_bytes + bytes_read
-                                       : puff_buffer_->data(),
-                                   cur_puff_->length);
       Error error;
       TEST_AND_RETURN_FALSE(
-          puffer_->PuffDeflate(&bit_reader, &puff_writer, &error));
-      TEST_AND_RETURN_FALSE(cur_deflate_->length == bit_reader.Offset());
+          puffer_->PuffDeflate(&bit_reader, &puff_writer, nullptr, &error));
+      TEST_AND_RETURN_FALSE(bytes_to_read == bit_reader.Offset());
       TEST_AND_RETURN_FALSE(cur_puff_->length == puff_writer.Size());
 
-      auto bytes_to_copy = std::min(
-          length - bytes_read,
-          static_cast<size_t>(cur_puff_->length) - start_byte_in_first_puff);
+      // Copy from puff buffer to output if needed.
+      auto bytes_to_copy =
+          std::min(length - bytes_read,
+                   static_cast<size_t>(cur_puff_->length) - skip_bytes_);
       if (!puff_directly_into_buffer) {
-        memcpy(c_bytes + bytes_read,
-               puff_buffer_->data() + start_byte_in_first_puff,
+        memcpy(bytes + bytes_read, puff_buffer_->data() + skip_bytes_,
                bytes_to_copy);
       }
 
-      start_byte_in_first_puff = 0;
+      skip_bytes_ += bytes_to_copy;
       bytes_read += bytes_to_copy;
+
       // Move to next puff.
-      if (puff_pos_ + bytes_read >= cur_puff_->offset + cur_puff_->length) {
+      if (puff_pos_ + skip_bytes_ == cur_puff_->offset + cur_puff_->length) {
+        puff_pos_ += skip_bytes_;
+        skip_bytes_ = 0;
+        deflate_bit_pos_ = cur_deflate_->offset + cur_deflate_->length;
         cur_puff_++;
         cur_deflate_++;
+        if (cur_puff_ == puffs_.end()) {
+          break;
+        }
       }
     }
   }
+
   TEST_AND_RETURN_FALSE(bytes_read == length);
-  puff_pos_ += length;
   return true;
 }
 
-// This function, writes non-puff data directly to |stream_| and caches the puff
-// data into |puff_buffer_|. When |puff_buffer_| is full, it huffs it into
-// |deflate_buffer_| and writes it to |stream_|.
 bool PuffinStream::Write(const void* buffer, size_t length) {
   TEST_AND_RETURN_FALSE(!closed_);
   TEST_AND_RETURN_FALSE(!is_for_puff_);
-  TEST_AND_RETURN_FALSE(puff_pos_ + length <= puff_stream_size_);
-  auto c_bytes = static_cast<const uint8_t*>(buffer);
-  bool passed_all_puffs =
-      puffs_.empty() ||
-      (puff_pos_ >= puffs_.back().offset + puffs_.back().length);
-
-  // Here we are assuming that data is coming in stream with no retract. Find
-  // out if we are in a puffed deflate location and huff it if necessary.
-  size_t cur_puff_bytes_wrote = 0;
-  if (!passed_all_puffs && puff_pos_ >= cur_puff_->offset) {
-    cur_puff_bytes_wrote = puff_pos_ - cur_puff_->offset;
-  }
-
+  auto bytes = static_cast<const uint8_t*>(buffer);
   size_t bytes_wrote = 0;
-  size_t copy_len = 0;
   while (bytes_wrote < length) {
-    if (passed_all_puffs) {
-      // After all puffs are processed.
-      copy_len = length - bytes_wrote;
-      TEST_AND_RETURN_FALSE(stream_->Write(c_bytes + bytes_wrote, copy_len));
-    } else if (puff_pos_ < cur_puff_->offset) {
-      // Between two puffs or before the first puff.
-      copy_len = std::min(static_cast<size_t>(cur_puff_->offset - puff_pos_),
-                          length - bytes_wrote);
-      TEST_AND_RETURN_FALSE(stream_->Write(c_bytes + bytes_wrote, copy_len));
-    } else if (puff_pos_ >= cur_puff_->offset &&
-               puff_pos_ < (cur_puff_->offset + cur_puff_->length)) {
-      // Copy |c_bytes| into |puff_buffer_|.
-      copy_len = std::min(
+    if (deflate_bit_pos_ < (cur_deflate_->offset & ~7u)) {
+      // Between two puffs or before the first puff. We know that we are
+      // starting from the byte boundary because we have already processed the
+      // non-deflate bits of the last byte of the last deflate. Here we don't
+      // process any byte that has deflate bit.
+      TEST_AND_RETURN_FALSE((deflate_bit_pos_ & 7) == 0);
+      auto copy_len = std::min((static_cast<size_t>(cur_deflate_->offset) / 8) -
+                                   (deflate_bit_pos_ / 8),
+                               length - bytes_wrote);
+      TEST_AND_RETURN_FALSE(stream_->Write(bytes + bytes_wrote, copy_len));
+      bytes_wrote += copy_len;
+      puff_pos_ += copy_len;
+      deflate_bit_pos_ += copy_len * 8;
+    } else {
+      // We are in a puff. We have to buffer incoming bytes until we reach the
+      // size of the current puff so we can huff :). If the last bit of the
+      // current deflate does not end in a byte boundary, then we have to read
+      // one more byte to fill up the last byte of the deflate stream before
+      // doing anything else.
+
+      // |deflate_bit_pos_| now should be in the same byte as
+      // |cur_deflate->offset|.
+      if (deflate_bit_pos_ < cur_deflate_->offset) {
+        last_byte_ |= bytes[bytes_wrote++] << (deflate_bit_pos_ & 7);
+        skip_bytes_ = 0;
+        deflate_bit_pos_ = cur_deflate_->offset;
+        puff_pos_++;
+        TEST_AND_RETURN_FALSE(puff_pos_ == cur_puff_->offset);
+      }
+
+      auto copy_len = std::min(
           length - bytes_wrote,
-          static_cast<size_t>(cur_puff_->length - cur_puff_bytes_wrote));
-      memcpy(puff_buffer_->data() + cur_puff_bytes_wrote,
-             c_bytes + bytes_wrote,
-             copy_len);
-      cur_puff_bytes_wrote += copy_len;
-      if (cur_puff_bytes_wrote == cur_puff_->length) {
+          static_cast<size_t>(cur_puff_->length) + extra_byte_ - skip_bytes_);
+      TEST_AND_RETURN_FALSE(puff_buffer_->size() >= skip_bytes_ + copy_len);
+      memcpy(puff_buffer_->data() + skip_bytes_, bytes + bytes_wrote, copy_len);
+      skip_bytes_ += copy_len;
+      bytes_wrote += copy_len;
+
+      if (skip_bytes_ == cur_puff_->length + extra_byte_) {
         // |puff_buffer_| is full, now huff into the |deflate_buffer_|.
+        auto start_byte = cur_deflate_->offset / 8;
+        auto end_byte = (cur_deflate_->offset + cur_deflate_->length + 7) / 8;
+        auto bytes_to_write = end_byte - start_byte;
+
+        deflate_buffer_->resize(bytes_to_write);
+        BufferBitWriter bit_writer(deflate_buffer_->data(), bytes_to_write);
         BufferPuffReader puff_reader(puff_buffer_->data(), cur_puff_->length);
-        BufferBitWriter bit_writer(deflate_buffer_->data(),
-                                   cur_deflate_->length);
+
+        // Write last byte if it has any.
+        TEST_AND_RETURN_FALSE(
+            bit_writer.WriteBits(cur_deflate_->offset & 7, last_byte_));
+        last_byte_ = 0;
 
         Error error;
         TEST_AND_RETURN_FALSE(
             huffer_->HuffDeflate(&puff_reader, &bit_writer, &error));
-        TEST_AND_RETURN_FALSE(bit_writer.Size() == cur_deflate_->length);
+        TEST_AND_RETURN_FALSE(bit_writer.Size() == bytes_to_write);
         TEST_AND_RETURN_FALSE(puff_reader.BytesLeft() == 0);
+
+        deflate_bit_pos_ = cur_deflate_->offset + cur_deflate_->length;
+        if (extra_byte_ == 1) {
+          deflate_buffer_->data()[bytes_to_write - 1] |=
+              puff_buffer_->data()[cur_puff_->length] << (deflate_bit_pos_ & 7);
+          deflate_bit_pos_ = (deflate_bit_pos_ + 7) & ~7u;
+        } else if ((deflate_bit_pos_ & 7) != 0) {
+          // This happens if current and next deflate finish and end on the same
+          // byte, then we cannot write into output until we have huffed the
+          // next puff buffer, so untill then we cache it into |last_byte_| and
+          // we won't write it out.
+          last_byte_ = deflate_buffer_->data()[bytes_to_write - 1];
+          bytes_to_write--;
+        }
+
         // Write |deflate_buffer_| into output.
         TEST_AND_RETURN_FALSE(
-            stream_->Write(deflate_buffer_->data(), cur_deflate_->length));
-        // Move to next deflate/puff and if it was the last puff then mark
-        // passed_all_puffs as true.
+            stream_->Write(deflate_buffer_->data(), bytes_to_write));
+
+        // Move to the next deflate/puff.
+        puff_pos_ += skip_bytes_;
+        skip_bytes_ = 0;
         cur_puff_++;
         cur_deflate_++;
-        cur_puff_bytes_wrote = 0;
         if (cur_puff_ == puffs_.end()) {
-          passed_all_puffs = true;
+          break;
         }
+        // Find if need an extra byte to cache at the end.
+        TEST_AND_RETURN_FALSE(SetExtraByte());
       }
-    } else {
-      TEST_AND_RETURN_FALSE(puff_pos_ <= cur_puff_->offset);
     }
-    bytes_wrote += copy_len;
-    puff_pos_ += copy_len;
   }
+
   TEST_AND_RETURN_FALSE(bytes_wrote == length);
+  return true;
+}
+
+bool PuffinStream::SetExtraByte() {
+  TEST_AND_RETURN_FALSE(cur_deflate_ != deflates_.end());
+  if ((cur_deflate_ + 1) == deflates_.end()) {
+    extra_byte_ = 0;
+    return true;
+  }
+  size_t end_bit = cur_deflate_->offset + cur_deflate_->length;
+  if ((end_bit & 7) && ((end_bit + 7) & ~7u) <= (cur_deflate_ + 1)->offset) {
+    extra_byte_ = 1;
+  } else {
+    extra_byte_ = 0;
+  }
   return true;
 }
 

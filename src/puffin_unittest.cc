@@ -2,11 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <zlib.h>
-
 #include <algorithm>
-#include <fstream>
-#include <iomanip>
 #include <string>
 #include <vector>
 
@@ -16,18 +12,15 @@
 #include "puffin/src/bit_writer.h"
 #include "puffin/src/include/puffin/common.h"
 #include "puffin/src/include/puffin/huffer.h"
-#include "puffin/src/include/puffin/puffdiff.h"
 #include "puffin/src/include/puffin/puffer.h"
-#include "puffin/src/include/puffin/puffpatch.h"
 #include "puffin/src/include/puffin/stream.h"
 #include "puffin/src/include/puffin/utils.h"
 #include "puffin/src/puff_reader.h"
 #include "puffin/src/puff_writer.h"
+#include "puffin/src/puffin_stream.h"
 #include "puffin/src/sample_generator.h"
 #include "puffin/src/set_errors.h"
 #include "puffin/src/unittest_common.h"
-
-#define PRINT_SAMPLE 0  // Set to 1 if you want to print the generated samples.
 
 namespace puffin {
 
@@ -46,7 +39,6 @@ class PuffinTest : public ::testing::Test {
     auto start = static_cast<uint8_t*>(out_buf);
 
     PuffData pd;
-    uint8_t final_bit = 0;
     Error error;
     while (puff_reader.BytesLeft() != 0) {
       TEST_AND_RETURN_FALSE(puff_reader.GetNext(&pd, &error));
@@ -69,7 +61,6 @@ class PuffinTest : public ::testing::Test {
         }
 
         case PuffData::Type::kBlockMetadata:
-          final_bit = pd.block_metadata[0] >> 7;
           break;
 
         case PuffData::Type::kEndOfBlock:
@@ -94,7 +85,7 @@ class PuffinTest : public ::testing::Test {
     BufferPuffWriter puff_writer(puff_buf, puff_size);
 
     TEST_AND_RETURN_FALSE(
-        puffer_.PuffDeflate(&bit_reader, &puff_writer, error));
+        puffer_.PuffDeflate(&bit_reader, &puff_writer, nullptr, error));
     TEST_AND_RETURN_FALSE_SET_ERROR(comp_size == bit_reader.Offset(),
                                     Error::kInvalidInput);
     TEST_AND_RETURN_FALSE_SET_ERROR(puff_size = puff_writer.Size(),
@@ -200,36 +191,41 @@ class PuffinTest : public ::testing::Test {
     Decompress(puffed, original, &uncompress);
   }
 
-  void TestPatching(const Buffer& src_buf,
-                    const Buffer& dst_buf,
-                    const vector<ByteExtent>& src_deflates,
-                    const vector<ByteExtent>& dst_deflates,
-                    const Buffer patch) {
-    SharedBufferPtr src_buf_ptr(new Buffer(src_buf));
-    SharedBufferPtr dst_buf_ptr(new Buffer(dst_buf));
-    auto src_stream = MemoryStream::Create(src_buf_ptr, true, false);
-    auto dst_stream = MemoryStream::Create(dst_buf_ptr, true, false);
+  void CheckBitExtentsPuffAndHuff(const Buffer& deflate_buffer,
+                                  const vector<BitExtent>& deflate_extents,
+                                  const Buffer& puff_buffer,
+                                  const vector<ByteExtent>& puff_extents) {
+    std::shared_ptr<Puffer> puffer(new Puffer());
+    auto deflate_stream = MemoryStream::Create(
+        SharedBufferPtr(new Buffer(deflate_buffer)), true, false);
+    ASSERT_TRUE(deflate_stream->Seek(0));
+    vector<ByteExtent> out_puff_extents;
+    size_t puff_size;
+    ASSERT_TRUE(FindPuffLocations(deflate_stream, deflate_extents,
+                                  &out_puff_extents, &puff_size));
+    EXPECT_EQ(puff_size, puff_buffer.size());
+    EXPECT_EQ(out_puff_extents, puff_extents);
 
-    Buffer patch_out;
-    string patch_path = "/tmp/patch.tmp";
-    ScopedPathUnlinker scoped_unlinker(patch_path);
-    ASSERT_TRUE(PuffDiff(std::move(src_stream), std::move(dst_stream),
-                         src_deflates, dst_deflates, patch_path, &patch_out));
+    auto src_puffin_stream =
+        PuffinStream::CreateForPuff(std::move(deflate_stream), puffer,
+                                    puff_size, deflate_extents, puff_extents);
 
-#if PRINT_SAMPLE
-    sample_generator::PrintArray("kPatchXXXXX", patch_out);
-#endif
+    Buffer out_puff_buffer(puff_buffer.size());
+    ASSERT_TRUE(src_puffin_stream->Read(out_puff_buffer.data(),
+                                        out_puff_buffer.size()));
+    EXPECT_EQ(out_puff_buffer, puff_buffer);
 
-    ASSERT_EQ(patch_out, patch);
+    std::shared_ptr<Huffer> huffer(new Huffer());
+    SharedBufferPtr out_deflate_buffer(new Buffer(deflate_buffer.size()));
+    deflate_stream = MemoryStream::Create(out_deflate_buffer, false, true);
 
-    src_stream = MemoryStream::Create(src_buf_ptr, true, false);
-    SharedBufferPtr dst_buf_ptr2(new Buffer());
-    auto dst_stream2 = MemoryStream::Create(dst_buf_ptr2, false, true);
-    ASSERT_TRUE(PuffPatch(std::move(src_stream),
-                          std::move(dst_stream2),
-                          patch.data(),
-                          patch.size()));
-    ASSERT_EQ(*dst_buf_ptr2, dst_buf);
+    src_puffin_stream =
+        PuffinStream::CreateForHuff(std::move(deflate_stream), huffer,
+                                    puff_size, deflate_extents, puff_extents);
+
+    ASSERT_TRUE(
+        src_puffin_stream->Write(puff_buffer.data(), puff_buffer.size()));
+    EXPECT_EQ(*out_deflate_buffer, deflate_buffer);
   }
 
  protected:
@@ -299,28 +295,9 @@ TEST_F(PuffinTest, MultipleDeflateBufferBothFinalBitTest) {
 
 // TODO(ahassani): Add unittests for Failhuff too.
 
-// TODO(ahassani): Add unittest for a deflate stream with multiple blocks.
-
-// TODO(ahassani): Add unittest for testing end of stream and end of stream
-// bits.
-
-TEST_F(PuffinTest, Patching8To9Test) {
-  TestPatching(
-      kDeflates8, kDeflates9, kDeflateExtents8, kDeflateExtents9, kPatch8To9);
-}
-
-TEST_F(PuffinTest, Patching9To8Test) {
-  TestPatching(
-      kDeflates9, kDeflates8, kDeflateExtents9, kDeflateExtents8, kPatch9To8);
-}
-
-TEST_F(PuffinTest, Patching8ToEmptyTest) {
-  TestPatching(kDeflates8, {}, kDeflateExtents8, {}, kPatch8ToEmpty);
-}
-
-TEST_F(PuffinTest, Patching8ToNoDeflateTest) {
-  TestPatching(
-      kDeflates8, {11, 22, 33, 44}, kDeflateExtents8, {}, kPatch8ToNoDeflate);
+TEST_F(PuffinTest, BitExtentPuffAndHuffTest) {
+  CheckBitExtentsPuffAndHuff(kDeflate11, kSubblockDeflateExtents11, kPuff11,
+                             kPuffExtents11);
 }
 
 // TODO(ahassani): add tests for:

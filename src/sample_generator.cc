@@ -81,7 +81,8 @@ bool PrintSample(Puffer* puffer,
 
   BufferBitReader bit_reader(comp.data(), comp.size());
   BufferPuffWriter puff_writer(puff.data(), puff.size());
-  TEST_AND_RETURN_FALSE(puffer->PuffDeflate(&bit_reader, &puff_writer, &error));
+  TEST_AND_RETURN_FALSE(
+      puffer->PuffDeflate(&bit_reader, &puff_writer, nullptr, &error));
   TEST_AND_RETURN_FALSE(comp.size() == bit_reader.Offset());
 
   puff.resize(puff_writer.Size());

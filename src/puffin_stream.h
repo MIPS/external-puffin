@@ -41,7 +41,7 @@ class PuffinStream : public StreamInterface {
   static UniqueStreamPtr CreateForPuff(UniqueStreamPtr stream,
                                        std::shared_ptr<Puffer> puffer,
                                        size_t puff_size,
-                                       const std::vector<ByteExtent>& deflates,
+                                       const std::vector<BitExtent>& deflates,
                                        const std::vector<ByteExtent>& puffs);
 
   // Creates a |PuffinStream| for writing puff buffers into a deflate stream.
@@ -54,7 +54,7 @@ class PuffinStream : public StreamInterface {
   static UniqueStreamPtr CreateForHuff(UniqueStreamPtr stream,
                                        std::shared_ptr<Huffer> huffer,
                                        size_t puff_size,
-                                       const std::vector<ByteExtent>& deflates,
+                                       const std::vector<BitExtent>& deflates,
                                        const std::vector<ByteExtent>& puffs);
 
   bool GetSize(size_t* size) const override;
@@ -71,7 +71,10 @@ class PuffinStream : public StreamInterface {
 
   // Reads the puff stream from |buffer|, huffs it and writes it into the
   // deflate stream |stream_|. The current assumption for write is that data is
-  // read from beginning to end with no retraction or random change of offset.
+  // wrote from beginning to end with no retraction or random change of offset.
+  // This function, writes non-puff data directly to |stream_| and caches the
+  // puff data into |puff_buffer_|. When |puff_buffer_| is full, it huffs it
+  // into |deflate_buffer_| and writes it to |stream_|.
   bool Write(const void* buffer, size_t length) override;
 
   bool Close() override;
@@ -82,10 +85,13 @@ class PuffinStream : public StreamInterface {
                std::shared_ptr<Puffer> puffer,
                std::shared_ptr<Huffer> huffer,
                size_t puff_size,
-               const std::vector<ByteExtent>& deflates,
+               const std::vector<BitExtent>& deflates,
                const std::vector<ByteExtent>& puffs);
 
  private:
+  // See |extra_byte_|.
+  bool SetExtraByte();
+
   UniqueStreamPtr stream_;
 
   std::shared_ptr<Puffer> puffer_;
@@ -93,26 +99,41 @@ class PuffinStream : public StreamInterface {
 
   // The size of the imaginary puff stream.
   size_t puff_stream_size_;
-  std::vector<ByteExtent> deflates_;
+
+  std::vector<BitExtent> deflates_;
+  // The current deflate is being processed.
+  std::vector<BitExtent>::iterator cur_deflate_;
+
   std::vector<ByteExtent> puffs_;
+  // The current puff is being processed.
+  std::vector<ByteExtent>::iterator cur_puff_;
 
-  // The current offset in the imaginary puff stream.
+  // The current offset in the imaginary puff stream is |puff_pos_| +
+  // |skip_bytes_|
   size_t puff_pos_;
+  size_t skip_bytes_;
 
-  // The current offset in |stream_|.
-  size_t deflate_pos_;
+  // The current bit offset in |stream_|.
+  size_t deflate_bit_pos_;
+
+  // This value caches the first or last byte of a deflate stream. This is
+  // needed when two deflate stream end on the same byte (with greater than zero
+  // bit offset difference) or a deflate starts from middle of the byte. We need
+  // to cache the value in here before we have the rest of the puff buffer to
+  // make the deflate.
+  uint8_t last_byte_;
+
+  // We have to figure out if we need to cache an extra puff byte for the last
+  // byte of the deflate. This is only needed if the last bit of the current
+  // deflate is not in the same byte as the first bit of the next deflate. The
+  // value is either 0 or 1. If 1.
+  size_t extra_byte_;
 
   // True if the stream is only for puffing. False if for huffing.
   bool is_for_puff_;
 
   // True if the |Close()| is called.
   bool closed_;
-
-  // The current puff is being processed.
-  std::vector<ByteExtent>::iterator cur_puff_;
-
-  // The current deflate is being processed.
-  std::vector<ByteExtent>::iterator cur_deflate_;
 
   UniqueBufferPtr deflate_buffer_;
   UniqueBufferPtr puff_buffer_;

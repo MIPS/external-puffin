@@ -130,6 +130,7 @@ bool BufferPuffWriter::Insert(const PuffData& pd, Error* error) {
       }
       index_ += 2;
 
+      TEST_AND_RETURN_FALSE(pd.length <= sizeof(pd.block_metadata));
       if (puff_buf_out_ != nullptr) {
         memcpy(&puff_buf_out_[index_], pd.block_metadata, pd.length);
       }
@@ -143,15 +144,13 @@ bool BufferPuffWriter::Insert(const PuffData& pd, Error* error) {
       TEST_AND_RETURN_FALSE(FlushLiterals(error));
       if (puff_buf_out_ != nullptr) {
         // Boundary check
-        TEST_AND_RETURN_FALSE_SET_ERROR(index_ + 4 <= puff_size_,
+        TEST_AND_RETURN_FALSE_SET_ERROR(index_ + 2 <= puff_size_,
                                         Error::kInsufficientOutput);
 
         puff_buf_out_[index_++] = kLenDistHeader | 127;
         puff_buf_out_[index_++] = static_cast<uint8_t>(259 - 3 - 127);
-        WriteUint16ToByteArray(pd.byte, &puff_buf_out_[index_]);
-        index_ += 2;
       } else {
-        index_ += 4;
+        index_ += 2;
       }
 
       len_index_ = index_;

@@ -29,6 +29,7 @@ Puffer::~Puffer() {}
 
 bool Puffer::PuffDeflate(BitReaderInterface* br,
                          PuffWriterInterface* pw,
+                         vector<BitExtent>* deflates,
                          Error* error) const {
   *error = Error::kSuccess;
   PuffData pd;
@@ -37,6 +38,8 @@ bool Puffer::PuffDeflate(BitReaderInterface* br,
   // the minimum length of a deflate bit stream is 8: (fixed huffman table) 3
   // bits header + 5 bits just one len/dist symbol.
   while (br->CacheBits(8)) {
+    auto start_bit_offset = br->OffsetInBits();
+
     TEST_AND_RETURN_FALSE_SET_ERROR(br->CacheBits(3),
                                     Error::kInsufficientInput);
     uint8_t final_bit = br->ReadBits(1);  // BFINAL
@@ -90,8 +93,12 @@ bool Puffer::PuffDeflate(BitReaderInterface* br,
         TEST_AND_RETURN_FALSE(pw->Insert(pd, error));
 
         pd.type = PuffData::Type::kEndOfBlock;
-        pd.byte = 0;
         TEST_AND_RETURN_FALSE(pw->Insert(pd, error));
+
+        if (deflates != nullptr) {
+          deflates->emplace_back(start_bit_offset,
+                                 br->OffsetInBits() - start_bit_offset);
+        }
 
         // continue the loop. Do not read any literal/length/distance.
         continue;
@@ -149,12 +156,11 @@ bool Puffer::PuffDeflate(BitReaderInterface* br,
 
       } else if (256 == lit_len_alphabet) {
         pd.type = PuffData::Type::kEndOfBlock;
-        pd.byte = br->ReadBoundaryBits();
-        // Skip the boundary bits only if it was the final block.
-        if (final_bit == 1) {
-          br->SkipBoundaryBits();
-        }
         TEST_AND_RETURN_FALSE(pw->Insert(pd, error));
+        if (deflates != nullptr) {
+          deflates->emplace_back(start_bit_offset,
+                                 br->OffsetInBits() - start_bit_offset);
+        }
         break;  // Breaks the loop.
       } else {
         TEST_AND_RETURN_FALSE_SET_ERROR(lit_len_alphabet <= 285,

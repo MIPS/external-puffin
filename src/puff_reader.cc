@@ -39,20 +39,21 @@ bool BufferPuffReader::GetNext(PuffData* data, Error* error) {
       }
       length += 3;
       index_++;
+
+      // End of block. End of block is similar to length/distance but without
+      // distance value and length value set to 259.
+      if (length == 259) {
+        pd.type = PuffData::Type::kEndOfBlock;
+        state_ = State::kReadingBlockMetadata;
+        DVLOG(2) << "Read end of block";
+        return true;
+      }
+
       // Boundary check
       TEST_AND_RETURN_FALSE_SET_ERROR(index_ + 1 < puff_size_,
                                       Error::kInsufficientInput);
       auto distance = ReadByteArrayToUint16(&puff_buf_in_[index_]);
       index_ += 2;
-
-      // End of block
-      if (length == 259) {
-        pd.type = PuffData::Type::kEndOfBlock;
-        pd.byte = distance;
-        state_ = State::kReadingBlockMetadata;
-        DVLOG(2) << "Read end of block";
-        return true;
-      }
 
       TEST_AND_RETURN_FALSE(length < 259);
       pd.type = PuffData::Type::kLenDist;
@@ -102,7 +103,7 @@ bool BufferPuffReader::GetNext(PuffData* data, Error* error) {
     // Boundary check
     TEST_AND_RETURN_FALSE_SET_ERROR(index_ + length <= puff_size_,
                                     Error::kInsufficientInput);
-
+    TEST_AND_RETURN_FALSE(length <= sizeof(pd.block_metadata));
     memcpy(pd.block_metadata, &puff_buf_in_[index_], length);
     index_ += length;
     pd.length = length;

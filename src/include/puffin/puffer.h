@@ -23,9 +23,11 @@ class PUFFIN_EXPORT Puffer {
   Puffer();
   ~Puffer();
 
-  // Creates a puffed buffer from a deflate buffer.
+  // Creates a puffed buffer from a deflate buffer. If |deflates| is not null,
+  // it will be populated with the location of subblocks in the input data.
   bool PuffDeflate(BitReaderInterface* br,
                    PuffWriterInterface* pw,
+                   std::vector<BitExtent>* deflates,
                    Error* error) const;
 
  private:
