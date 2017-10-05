@@ -108,6 +108,8 @@ class PuffinStream : public StreamInterface {
   // The current puff is being processed.
   std::vector<ByteExtent>::iterator cur_puff_;
 
+  std::vector<size_t> upper_bounds_;
+
   // The current offset in the imaginary puff stream is |puff_pos_| +
   // |skip_bytes_|
   size_t puff_pos_;

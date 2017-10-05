@@ -75,6 +75,13 @@ PuffinStream::PuffinStream(UniqueStreamPtr stream,
       extra_byte_(0),
       is_for_puff_(puffer_ ? true : false),
       closed_(false) {
+  // Building upper bounds for faster seek.
+  upper_bounds_.reserve(puffs.size());
+  for (const auto& puff : puffs) {
+    upper_bounds_.emplace_back(puff.offset + puff.length);
+  }
+  upper_bounds_.emplace_back(puff_stream_size_ + 1);
+
   // We can pass the size of the deflate stream too, but it is not necessary
   // yet. We cannot get the size of stream from itself, because we might be
   // writing into it and its size is not defined yet.
@@ -116,24 +123,20 @@ bool PuffinStream::GetOffset(size_t* offset) const {
 bool PuffinStream::Seek(size_t offset) {
   TEST_AND_RETURN_FALSE(!closed_);
   if (!is_for_puff_) {
-    // For huffing we should not seek, only seek to zero is accepted
+    // For huffing we should not seek, only seek to zero is accepted.
     TEST_AND_RETURN_FALSE(offset == 0);
   }
 
   TEST_AND_RETURN_FALSE(offset <= puff_stream_size_);
-  // We are searching backwards for the first available puff which either
-  // includes the |offset| or it is the next available puff after |offset|.
-  // TODO(*): This can be improved by binary search.
-  ssize_t next_puff = puffs_.size() - 1;
-  for (ssize_t idx = puffs_.size() - 1; idx >= 0; idx--) {
-    if (offset < puffs_[idx].offset + puffs_[idx].length) {
-      next_puff = idx;
-    } else {
-      break;
-    }
-  }
-  cur_puff_ = std::next(puffs_.begin(), next_puff);
-  cur_deflate_ = std::next(deflates_.begin(), next_puff);
+
+  // We are searching first available puff which either includes the |offset| or
+  // it is the next available puff after |offset|.
+  auto next_puff_iter =
+      std::upper_bound(upper_bounds_.begin(), upper_bounds_.end(), offset);
+  TEST_AND_RETURN_FALSE(next_puff_iter != upper_bounds_.end());
+  auto next_puff_idx = std::distance(upper_bounds_.begin(), next_puff_iter);
+  cur_puff_ = std::next(puffs_.begin(), next_puff_idx);
+  cur_deflate_ = std::next(deflates_.begin(), next_puff_idx);
 
   if (offset < cur_puff_->offset) {
     // between two puffs.
