@@ -20,6 +20,7 @@
 #include "puffin/src/include/puffin/puffpatch.h"
 #include "puffin/src/include/puffin/stream.h"
 #include "puffin/src/include/puffin/utils.h"
+#include "puffin/src/extent_stream.h"
 #include "puffin/src/puffin_stream.h"
 #include "puffin/src/set_errors.h"
 
@@ -27,11 +28,12 @@ using std::vector;
 using std::string;
 using puffin::BitExtent;
 using puffin::ByteExtent;
-using puffin::UniqueStreamPtr;
+using puffin::ExtentStream;
 using puffin::Error;
 using puffin::FileStream;
-using puffin::Puffer;
 using puffin::Huffer;
+using puffin::Puffer;
+using puffin::UniqueStreamPtr;
 
 namespace {
 
@@ -77,8 +79,15 @@ vector<T> StringToExtents(const string& str) {
                 "Source puff locations in the format offset:length,...");  \
   DEFINE_string(dst_puffs, "",                                             \
                 "Target puff locations in the format offset:length,...");  \
+  DEFINE_string(src_extents, "",                                           \
+                "Source extents in the format of offset:length,...");      \
+  DEFINE_string(dst_extents, "",                                           \
+                "Target extents in the format of offset:length,...");      \
   DEFINE_string(operation, "",                                             \
                 "Type of the operation: puff, huff, puffdiff, puffpatch"); \
+  DEFINE_bool(verbose, false,                                              \
+              "Logs all the given parameters including internally "        \
+              "generated ones");                                           \
   DEFINE_uint64(puff_size, 0, "Size of the puff stream");
 
 #ifndef USE_BRILLO
@@ -100,26 +109,36 @@ int main(int argc, char** argv) {
   TEST_AND_RETURN_VALUE(!FLAGS_dst_file.empty(), -1);
 
   auto src_deflates_byte = StringToExtents<ByteExtent>(FLAGS_src_deflates_byte);
-  LOG(INFO) << "src_deflates_byte: "
-            << puffin::ExtentsToString(src_deflates_byte);
   auto dst_deflates_byte = StringToExtents<ByteExtent>(FLAGS_dst_deflates_byte);
-  LOG(INFO) << "dst_deflates_byte: "
-            << puffin::ExtentsToString(dst_deflates_byte);
-
   auto src_deflates_bit = StringToExtents<BitExtent>(FLAGS_src_deflates_bit);
-  LOG(INFO) << "src_deflates_bit: "
-            << puffin::ExtentsToString(src_deflates_bit);
   auto dst_deflates_bit = StringToExtents<BitExtent>(FLAGS_dst_deflates_bit);
-  LOG(INFO) << "dst_deflates_bit: "
-            << puffin::ExtentsToString(dst_deflates_bit);
-
   auto src_puffs = StringToExtents<ByteExtent>(FLAGS_src_puffs);
-  LOG(INFO) << "src_puffs: " << puffin::ExtentsToString(src_puffs);
   auto dst_puffs = StringToExtents<ByteExtent>(FLAGS_dst_puffs);
-  LOG(INFO) << "dst_puffs: " << puffin::ExtentsToString(dst_puffs);
+  auto src_extents = StringToExtents<ByteExtent>(FLAGS_src_extents);
+  auto dst_extents = StringToExtents<ByteExtent>(FLAGS_dst_extents);
+
+  if (FLAGS_verbose) {
+    LOG(INFO) << "src_deflates_byte: "
+              << puffin::ExtentsToString(src_deflates_byte);
+    LOG(INFO) << "dst_deflates_byte: "
+              << puffin::ExtentsToString(dst_deflates_byte);
+    LOG(INFO) << "src_deflates_bit: "
+              << puffin::ExtentsToString(src_deflates_bit);
+    LOG(INFO) << "dst_deflates_bit: "
+              << puffin::ExtentsToString(dst_deflates_bit);
+    LOG(INFO) << "src_puffs: " << puffin::ExtentsToString(src_puffs);
+    LOG(INFO) << "dst_puffs: " << puffin::ExtentsToString(dst_puffs);
+    LOG(INFO) << "src_extents: " << puffin::ExtentsToString(src_extents);
+    LOG(INFO) << "dst_extents: " << puffin::ExtentsToString(dst_extents);
+  }
 
   auto src_stream = FileStream::Open(FLAGS_src_file, true, false);
   TEST_AND_RETURN_VALUE(src_stream, -1);
+  if (!src_extents.empty()) {
+    src_stream =
+        ExtentStream::CreateForRead(std::move(src_stream), src_extents);
+    TEST_AND_RETURN_VALUE(src_stream, -1);
+  }
 
   vector<ByteExtent> puffs;
   if (FLAGS_operation == "puff") {
@@ -139,8 +158,9 @@ int main(int argc, char** argv) {
     TEST_AND_RETURN_VALUE(FindPuffLocations(src_stream, src_deflates_bit,
                                             &dst_puffs, &dst_puff_size),
                           -1);
-    LOG(INFO) << "out_dst_puffs: " << puffin::ExtentsToString(dst_puffs);
-
+    if (FLAGS_verbose) {
+      LOG(INFO) << "out_dst_puffs: " << puffin::ExtentsToString(dst_puffs);
+    }
     // Puff using the given puff_size.
     auto reader = puffin::PuffinStream::CreateForPuff(
         std::move(src_stream), puffer, dst_puff_size, src_deflates_bit,
@@ -188,6 +208,11 @@ int main(int argc, char** argv) {
     }
     auto dst_stream = FileStream::Open(FLAGS_dst_file, true, false);
     TEST_AND_RETURN_VALUE(dst_stream, -1);
+    if (!dst_extents.empty()) {
+      dst_stream =
+          ExtentStream::CreateForWrite(std::move(dst_stream), dst_extents);
+      TEST_AND_RETURN_VALUE(dst_stream, -1);
+    }
 
     if (src_deflates_bit.empty()) {
       TEST_AND_RETURN_VALUE(FindDeflateSubBlocks(src_stream, src_deflates_byte,
@@ -207,8 +232,9 @@ int main(int argc, char** argv) {
                          src_deflates_bit, dst_deflates_bit, "/tmp/patch.tmp",
                          &puffdiff_delta),
         -1);
-
-    LOG(INFO) << "patch_size: " << puffdiff_delta.size();
+    if (FLAGS_verbose) {
+      LOG(INFO) << "patch_size: " << puffdiff_delta.size();
+    }
     auto patch_stream = FileStream::Open(FLAGS_patch_file, false, true);
     TEST_AND_RETURN_VALUE(patch_stream, -1);
     TEST_AND_RETURN_VALUE(
@@ -224,12 +250,16 @@ int main(int argc, char** argv) {
         patch_stream->Read(puffdiff_delta.data(), puffdiff_delta.size()), -1);
     auto dst_stream = FileStream::Open(FLAGS_dst_file, false, true);
     TEST_AND_RETURN_VALUE(dst_stream, -1);
+    if (!dst_extents.empty()) {
+      dst_stream =
+          ExtentStream::CreateForWrite(std::move(dst_stream), dst_extents);
+      TEST_AND_RETURN_VALUE(dst_stream, -1);
+    }
     TEST_AND_RETURN_VALUE(puffin::PuffPatch(std::move(src_stream),
                                             std::move(dst_stream),
                                             puffdiff_delta.data(),
                                             puffdiff_delta.size()),
                           -1);
   }
-  LOG(INFO) << "Finished! Exiting...";
   return 0;
 }

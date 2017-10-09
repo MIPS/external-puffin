@@ -10,6 +10,7 @@
 
 #include "puffin/src/include/puffin/huffer.h"
 #include "puffin/src/include/puffin/puffer.h"
+#include "puffin/src/extent_stream.h"
 #include "puffin/src/puffin_stream.h"
 #include "puffin/src/unittest_common.h"
 
@@ -17,6 +18,7 @@ namespace puffin {
 
 using std::string;
 using std::shared_ptr;
+using std::vector;
 
 class StreamTest : public ::testing::Test {
  public:
@@ -155,7 +157,7 @@ class StreamTest : public ::testing::Test {
   void TestClose(StreamInterface* stream) { ASSERT_TRUE(stream->Close()); }
 };
 
-TEST_F(StreamTest, TestMemoryStream) {
+TEST_F(StreamTest, MemoryStreamTest) {
   SharedBufferPtr buf(new Buffer(105));
   std::iota(buf->begin(), buf->end(), 0);
 
@@ -169,7 +171,7 @@ TEST_F(StreamTest, TestMemoryStream) {
   TestClose(stream.get());
 }
 
-TEST_F(StreamTest, TestFileStream) {
+TEST_F(StreamTest, FileStreamTest) {
   string filepath("/tmp/test_filepath");
   ScopedPathUnlinker scoped_unlinker(filepath);
   ASSERT_FALSE(FileStream::Open(filepath, false, false));
@@ -230,6 +232,36 @@ TEST_F(StreamTest, PuffinStreamTest) {
 
   // No TestSeek is needed as PuffinStream is not supposed to seek to anywhere
   // except 0.
+  TestClose(write_stream.get());
+}
+
+TEST_F(StreamTest, ExtentStreamTest) {
+  SharedBufferPtr buf(new Buffer(100));
+  std::iota(buf->begin(), buf->end(), 0);
+
+  vector<ByteExtent> extents = {{10, 10}, {25, 0}, {30, 10}};
+  Buffer data = {10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+                 30, 31, 32, 33, 34, 35, 36, 37, 38, 39};
+
+  auto read_stream = ExtentStream::CreateForRead(
+      MemoryStream::Create(buf, true, false), extents);
+  TestSeek(read_stream.get(), false);
+  TestRead(read_stream.get(), data);
+  TestClose(read_stream.get());
+
+  SharedBufferPtr buf2(new Buffer(*buf));
+  std::fill(data.begin(), data.end(), 3);
+  for (const auto& extent : extents) {
+    std::fill(buf->begin() + extent.offset,
+              buf->begin() + (extent.offset + extent.length), 3);
+  }
+  auto write_stream = ExtentStream::CreateForWrite(
+      MemoryStream::Create(buf2, true, true), extents);
+  ASSERT_TRUE(write_stream->Seek(0));
+  ASSERT_TRUE(write_stream->Write(data.data(), data.size()));
+  EXPECT_EQ(*buf2, *buf);
+
+  TestSeek(write_stream.get(), false);
   TestClose(write_stream.get());
 }
 

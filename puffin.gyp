@@ -121,6 +121,7 @@
         'libpuffpatch-static',
       ],
       'sources': [
+        'src/extent_stream.cc',
         'src/main.cc',
       ],
     },
@@ -158,6 +159,7 @@
           'includes': ['../../platform2/common-mk/common_test.gypi'],
           'sources': [
             'src/bit_io_unittest.cc',
+            'src/extent_stream.cc',
             'src/patching_unittest.cc',
             'src/puff_io_unittest.cc',
             'src/puffin_unittest.cc',

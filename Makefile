@@ -5,6 +5,7 @@
 PUFFIN_SOURCES = \
 	bit_reader.cc \
 	bit_writer.cc \
+	extent_stream.cc \
 	huffer.cc \
 	huffman_table.cc \
 	puffer.cc \
