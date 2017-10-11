@@ -24,25 +24,20 @@
     ],
   },
   'targets': [
-    # puffin-proto library
+    # libpuffin-proto library
     {
-      'target_name': 'puffin-proto',
+      'target_name': 'libpuffin-proto',
       'type': 'static_library',
       'variables': {
         'proto_in_dir': 'src',
         'proto_out_dir': 'include/puffin/src',
-        'exported_deps': [
-          'protobuf-lite',
-        ],
-        'deps': ['<@(exported_deps)'],
       },
-      'cflags_cc': [
-        '-fPIC',
-      ],
+      'cflags!': ['-fPIE'],
+      'cflags': ['-fPIC'],
       'all_dependent_settings': {
         'variables': {
           'deps': [
-            '<@(exported_deps)',
+            'protobuf-lite',
           ],
         },
       },
@@ -51,16 +46,13 @@
       ],
       'includes': ['../../platform2/common-mk/protoc.gypi'],
     },
-    # puffin library
+    # puffpatch static library. The reason to do one static and one shared is to
+    # be able to run the unittest.
     {
-      'target_name': 'libpuffin',
+      'target_name': 'libpuffpatch-static',
       'type': 'static_library',
-      'cflags_cc': [
-        '-fPIC',
-      ],
-      'dependencies': [
-        'puffin-proto',
-      ],
+      'cflags!': ['-fPIE'],
+      'cflags': ['-fPIC'],
       'sources': [
         'src/bit_reader.cc',
         'src/bit_writer.cc',
@@ -70,52 +62,63 @@
         'src/puff_writer.cc',
         'src/puffer.cc',
         'src/puffin_stream.cc',
+        'src/puffpatch.cc',
         'src/stream.cc',
       ],
+      'all_dependent_settings': {
+        'link_settings': {
+          'libraries': [
+            '-lbspatch',
+          ],
+        },
+      },
     },
-    # puffdiff library
+    # puffdiff static library.
     {
-      'target_name': 'libpuffdiff',
-      'type': 'shared_library',
-      'dependencies': [
-        'libpuffin',
-        'puffin-proto',
-      ],
+      'target_name': 'libpuffdiff-static',
+      'type': 'static_library',
+      'cflags!': ['-fPIE'],
+      'cflags': ['-fPIC'],
       'sources': [
         'src/puffdiff.cc',
         'src/utils.cc',
       ],
-      'link_settings': {
-        'libraries': [
-          '-lbsdiff',
-        ],
+      'all_dependent_settings': {
+        'link_settings': {
+          'libraries': [
+            '-lbsdiff',
+          ],
+        },
       },
     },
-    # puffpatch library
+    # puffpatch shared library.
     {
       'target_name': 'libpuffpatch',
       'type': 'shared_library',
       'dependencies': [
-        'libpuffin',
-        'puffin-proto',
+        'libpuffin-proto',
+        'libpuffpatch-static',
       ],
-      'sources': [
-        'src/puffpatch.cc',
-      ],
-      'link_settings': {
-        'libraries': [
-          '-lbspatch',
-        ],
-      },
     },
-    # Puffin binary.
+    # puffdiff shared library.
+    {
+      'target_name': 'libpuffdiff',
+      'type': 'shared_library',
+      'dependencies': [
+        'libpuffin-proto',
+        'libpuffdiff-static',
+        'libpuffpatch-static',
+      ],
+    },
+    # Puffin executable. We don't use the shared libraries because then we have
+    # to export symbols that shouldn't be exported otherwise.
     {
       'target_name': 'puffin',
       'type': 'executable',
       'dependencies': [
-        'libpuffin',
-        'libpuffpatch',
-        'libpuffdiff',
+        'libpuffin-proto',
+        'libpuffdiff-static',
+        'libpuffpatch-static',
       ],
       'sources': [
         'src/main.cc',
@@ -130,28 +133,28 @@
         {
           'target_name': 'libsample_generator',
           'type': 'static_library',
-          'dependencies': [
-            'libpuffin',
-          ],
           'sources': [
             'src/sample_generator.cc',
           ],
+          'all_dependent_settings': {
+            'variables': {
+              'deps': [
+                'zlib',
+              ],
+            },
+          },
         },
         # Unit tests.
         {
           'target_name': 'puffin_unittest',
           'type': 'executable',
           'dependencies': [
-            'libpuffdiff',
-            'libpuffpatch',
+            'libpuffin-proto',
+            'libpuffdiff-static',
+            'libpuffpatch-static',
             'libsample_generator',
             '../../platform2/common-mk/testrunner.gyp:testrunner',
           ],
-          'variables': {
-            'deps': [
-              'zlib',
-            ],
-          },
           'includes': ['../../platform2/common-mk/common_test.gypi'],
           'sources': [
             'src/bit_io_unittest.cc',
