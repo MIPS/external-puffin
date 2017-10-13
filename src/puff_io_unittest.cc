@@ -14,127 +14,144 @@ namespace puffin {
 // Testing read/write from/into a puff buffer using |PuffReader|/|PuffWriter|.
 TEST(PuffIOTest, InputOutputTest) {
   Buffer buf(100);
-  PuffData pd;
   BufferPuffReader pr(buf.data(), buf.size());
   BufferPuffWriter pw(buf.data(), buf.size());
   Error error;
-
-  pd.type = PuffData::Type::kBlockMetadata;
   uint8_t block = 123;
-  pd.block_metadata[0] = 0xCC;  // header
-  memcpy(&pd.block_metadata[1], &block, sizeof(block));
-  pd.length = sizeof(block) + 1;
-  ASSERT_TRUE(pw.Insert(pd, &error));
-  pw.Flush(&error);
 
-  memset(&pd, 0, sizeof(pd));
-  ASSERT_TRUE(pr.GetNext(&pd, &error));
-  ASSERT_EQ(pd.type, PuffData::Type::kBlockMetadata);
-  ASSERT_EQ(pd.length, sizeof(block) + 1);
-  ASSERT_EQ(pd.block_metadata[0], 0xCC);
-  ASSERT_EQ(pd.block_metadata[1], block);
+  {
+    PuffData pd;
+    pd.type = PuffData::Type::kBlockMetadata;
+    pd.block_metadata[0] = 0xCC;  // header
+    memcpy(&pd.block_metadata[1], &block, sizeof(block));
+    pd.length = sizeof(block) + 1;
+    ASSERT_TRUE(pw.Insert(pd, &error));
+    pw.Flush(&error);
+  }
+  {
+    PuffData pd;
+    ASSERT_TRUE(pr.GetNext(&pd, &error));
+    ASSERT_EQ(pd.type, PuffData::Type::kBlockMetadata);
+    ASSERT_EQ(pd.length, sizeof(block) + 1);
+    ASSERT_EQ(pd.block_metadata[0], 0xCC);
+    ASSERT_EQ(pd.block_metadata[1], block);
+  }
+  {
+    PuffData pd;
+    pd.type = PuffData::Type::kLenDist;
+    pd.distance = 321;
+    pd.length = 3;
+    ASSERT_TRUE(pw.Insert(pd, &error));
+    pd.length = 127;
+    ASSERT_TRUE(pw.Insert(pd, &error));
+    pd.length = 258;
+    ASSERT_TRUE(pw.Insert(pd, &error));
+    pw.Flush(&error);
 
-  memset(&pd, 0, sizeof(pd));
-  pd.type = PuffData::Type::kLenDist;
-  pd.distance = 321;
-  pd.length = 3;
-  ASSERT_TRUE(pw.Insert(pd, &error));
-  pd.length = 127;
-  ASSERT_TRUE(pw.Insert(pd, &error));
-  pd.length = 258;
-  ASSERT_TRUE(pw.Insert(pd, &error));
-  pw.Flush(&error);
+    pd.length = 259;
+    ASSERT_FALSE(pw.Insert(pd, &error));
+  }
+  {
+    PuffData pd;
+    ASSERT_TRUE(pr.GetNext(&pd, &error));
+    ASSERT_EQ(pd.type, PuffData::Type::kLenDist);
+    ASSERT_EQ(pd.distance, 321);
+    ASSERT_EQ(pd.length, 3);
+    ASSERT_TRUE(pr.GetNext(&pd, &error));
+    ASSERT_EQ(pd.type, PuffData::Type::kLenDist);
+    ASSERT_EQ(pd.length, 127);
+    ASSERT_TRUE(pr.GetNext(&pd, &error));
+    ASSERT_EQ(pd.type, PuffData::Type::kLenDist);
+    ASSERT_EQ(pd.length, 258);
+  }
+  {
+    PuffData pd;
+    pd.type = PuffData::Type::kEndOfBlock;
+    ASSERT_TRUE(pw.Insert(pd, &error));
+    pw.Flush(&error);
+  }
+  {
+    PuffData pd;
+    ASSERT_TRUE(pr.GetNext(&pd, &error));
+    ASSERT_EQ(pd.type, PuffData::Type::kEndOfBlock);
+  }
+  {
+    PuffData pd;
+    pd.type = PuffData::Type::kBlockMetadata;
+    block = 123;
+    pd.block_metadata[0] = 0xCC;  // header
+    memcpy(&pd.block_metadata[1], &block, sizeof(block));
+    pd.length = sizeof(block) + 1;
+    ASSERT_TRUE(pw.Insert(pd, &error));
+    pw.Flush(&error);
+  }
+  {
+    PuffData pd;
+    ASSERT_TRUE(pr.GetNext(&pd, &error));
+    ASSERT_EQ(pd.type, PuffData::Type::kBlockMetadata);
+    ASSERT_EQ(pd.length, sizeof(block) + 1);
+    ASSERT_EQ(pd.block_metadata[0], 0xCC);
+    ASSERT_EQ(pd.block_metadata[1], block);
+  }
 
-  pd.length = 259;
-  ASSERT_FALSE(pw.Insert(pd, &error));
-
-  memset(&pd, 0, sizeof(pd));
-  ASSERT_TRUE(pr.GetNext(&pd, &error));
-  ASSERT_EQ(pd.type, PuffData::Type::kLenDist);
-  ASSERT_EQ(pd.distance, 321);
-  ASSERT_EQ(pd.length, 3);
-  ASSERT_TRUE(pr.GetNext(&pd, &error));
-  ASSERT_EQ(pd.type, PuffData::Type::kLenDist);
-  ASSERT_EQ(pd.length, 127);
-  ASSERT_TRUE(pr.GetNext(&pd, &error));
-  ASSERT_EQ(pd.type, PuffData::Type::kLenDist);
-  ASSERT_EQ(pd.length, 258);
-
-  memset(&pd, 0, sizeof(pd));
-  pd.type = PuffData::Type::kEndOfBlock;
-  ASSERT_TRUE(pw.Insert(pd, &error));
-  pw.Flush(&error);
-
-  memset(&pd, 0, sizeof(pd));
-  ASSERT_TRUE(pr.GetNext(&pd, &error));
-  ASSERT_EQ(pd.type, PuffData::Type::kEndOfBlock);
-
-  memset(&pd, 0, sizeof(pd));
-  pd.type = PuffData::Type::kBlockMetadata;
-  block = 123;
-  pd.block_metadata[0] = 0xCC;  // header
-  memcpy(&pd.block_metadata[1], &block, sizeof(block));
-  pd.length = sizeof(block) + 1;
-  ASSERT_TRUE(pw.Insert(pd, &error));
-  pw.Flush(&error);
-
-  memset(&pd, 0, sizeof(pd));
-  ASSERT_TRUE(pr.GetNext(&pd, &error));
-  ASSERT_EQ(pd.type, PuffData::Type::kBlockMetadata);
-  ASSERT_EQ(pd.length, sizeof(block) + 1);
-  ASSERT_EQ(pd.block_metadata[0], 0xCC);
-  ASSERT_EQ(pd.block_metadata[1], block);
-
-  memset(&pd, 0, sizeof(pd));
   uint8_t tmp[] = {1, 2, 100};
-  size_t index = 0;
-  pd.type = PuffData::Type::kLiterals;
-  pd.length = 3;
-  pd.read_fn = [&tmp, &index](uint8_t* buffer, size_t count) {
-    if (count > 3 - index)
-      return false;
-    memcpy(buffer, &tmp[index], count);
-    index += count;
-    return true;
-  };
-  ASSERT_TRUE(pw.Insert(pd, &error));
-  ASSERT_TRUE(pw.Flush(&error));
+  {
+    PuffData pd;
+    size_t index = 0;
+    pd.type = PuffData::Type::kLiterals;
+    pd.length = 3;
+    pd.read_fn = [&tmp, &index](uint8_t* buffer, size_t count) {
+      if (count > 3 - index)
+        return false;
+      memcpy(buffer, &tmp[index], count);
+      index += count;
+      return true;
+    };
+    ASSERT_TRUE(pw.Insert(pd, &error));
+    ASSERT_TRUE(pw.Flush(&error));
+  }
+  {
+    PuffData pd;
+    pd.type = PuffData::Type::kLiteral;
+    pd.byte = 10;
+    ASSERT_TRUE(pw.Insert(pd, &error));
+    ASSERT_TRUE(pw.Flush(&error));
+  }
 
-  memset(&pd, 0, sizeof(pd));
-  pd.type = PuffData::Type::kLiteral;
-  pd.byte = 10;
-  ASSERT_TRUE(pw.Insert(pd, &error));
-  ASSERT_TRUE(pw.Flush(&error));
-
-  memset(&pd, 0, sizeof(pd));
-  ASSERT_TRUE(pr.GetNext(&pd, &error));
-  ASSERT_EQ(pd.type, PuffData::Type::kLiterals);
-  ASSERT_EQ(pd.length, 3);
   uint8_t tmp3[3];
-  ASSERT_TRUE(pd.read_fn(tmp3, 3));
-  ASSERT_FALSE(pd.read_fn(tmp3, 1));
-  ASSERT_EQ(0, memcmp(tmp3, tmp, 3));
+  {
+    PuffData pd;
+    ASSERT_TRUE(pr.GetNext(&pd, &error));
+    ASSERT_EQ(pd.type, PuffData::Type::kLiterals);
+    ASSERT_EQ(pd.length, 3);
+    ASSERT_TRUE(pd.read_fn(tmp3, 3));
+    ASSERT_FALSE(pd.read_fn(tmp3, 1));
+    ASSERT_EQ(0, memcmp(tmp3, tmp, 3));
+  }
+  {
+    PuffData pd;
+    ASSERT_TRUE(pr.GetNext(&pd, &error));
+    ASSERT_EQ(pd.type, PuffData::Type::kLiterals);
+    ASSERT_EQ(pd.length, 1);
+    ASSERT_TRUE(pd.read_fn(tmp3, 1));
+    ASSERT_EQ(tmp3[0], 10);
+    ASSERT_FALSE(pd.read_fn(tmp3, 2));
+  }
+  {
+    PuffData pd;
+    pd.type = PuffData::Type::kEndOfBlock;
+    pd.byte = 5;
+    ASSERT_TRUE(pw.Insert(pd, &error));
+    pw.Flush(&error);
+  }
+  {
+    PuffData pd;
+    ASSERT_TRUE(pr.GetNext(&pd, &error));
+    ASSERT_EQ(pd.type, PuffData::Type::kEndOfBlock);
+    ASSERT_EQ(pd.byte, 5);
 
-  memset(&pd, 0, sizeof(pd));
-  ASSERT_TRUE(pr.GetNext(&pd, &error));
-  ASSERT_EQ(pd.type, PuffData::Type::kLiterals);
-  ASSERT_EQ(pd.length, 1);
-  ASSERT_TRUE(pd.read_fn(tmp3, 1));
-  ASSERT_EQ(tmp3[0], 10);
-  ASSERT_FALSE(pd.read_fn(tmp3, 2));
-
-  memset(&pd, 0, sizeof(pd));
-  pd.type = PuffData::Type::kEndOfBlock;
-  pd.byte = 5;
-  ASSERT_TRUE(pw.Insert(pd, &error));
-  pw.Flush(&error);
-
-  memset(&pd, 0, sizeof(pd));
-  ASSERT_TRUE(pr.GetNext(&pd, &error));
-  ASSERT_EQ(pd.type, PuffData::Type::kEndOfBlock);
-  ASSERT_EQ(pd.byte, 5);
-
-  ASSERT_EQ(buf.size() - pr.BytesLeft(), pw.Size());
+    ASSERT_EQ(buf.size() - pr.BytesLeft(), pw.Size());
+  }
 }
 
 // Testing boundary

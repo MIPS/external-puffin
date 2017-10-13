@@ -133,6 +133,7 @@ bool PuffinStream::Close() {
 bool PuffinStream::Read(void* buffer, size_t length) {
   TEST_AND_RETURN_FALSE(!closed_);
   TEST_AND_RETURN_FALSE(is_for_puff_);
+  TEST_AND_RETURN_FALSE(puff_pos_ + length <= puff_stream_size_);
   auto c_bytes = static_cast<uint8_t*>(buffer);
   size_t start_byte_in_first_puff = 0;
 
@@ -216,6 +217,7 @@ bool PuffinStream::Read(void* buffer, size_t length) {
 bool PuffinStream::Write(const void* buffer, size_t length) {
   TEST_AND_RETURN_FALSE(!closed_);
   TEST_AND_RETURN_FALSE(!is_for_puff_);
+  TEST_AND_RETURN_FALSE(puff_pos_ + length <= puff_stream_size_);
   auto c_bytes = static_cast<const uint8_t*>(buffer);
   bool passed_all_puffs =
       puffs_.empty() ||
