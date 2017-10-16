@@ -57,6 +57,8 @@ vector<T> StringToExtents(const string& str) {
   return extents;
 }
 
+const size_t kDefaultPuffCacheSize = 50 * 1024 * 1024;  // 50 MB
+
 }  // namespace
 
 #define SETUP_FLAGS                                                        \
@@ -88,7 +90,9 @@ vector<T> StringToExtents(const string& str) {
   DEFINE_bool(verbose, false,                                              \
               "Logs all the given parameters including internally "        \
               "generated ones");                                           \
-  DEFINE_uint64(puff_size, 0, "Size of the puff stream");
+  DEFINE_uint64(puff_size, 0, "Size of the puff stream");                  \
+  DEFINE_uint64(cache_size, kDefaultPuffCacheSize,                         \
+                "Maximum size to cache the puff stream. Used in puffpatch");
 
 #ifndef USE_BRILLO
 SETUP_FLAGS;
@@ -255,11 +259,13 @@ int main(int argc, char** argv) {
           ExtentStream::CreateForWrite(std::move(dst_stream), dst_extents);
       TEST_AND_RETURN_VALUE(dst_stream, -1);
     }
-    TEST_AND_RETURN_VALUE(puffin::PuffPatch(std::move(src_stream),
-                                            std::move(dst_stream),
-                                            puffdiff_delta.data(),
-                                            puffdiff_delta.size()),
-                          -1);
+    // Apply the patch. Use 50MB cache, it should be enough for most of the
+    // operations.
+    TEST_AND_RETURN_VALUE(
+        puffin::PuffPatch(std::move(src_stream), std::move(dst_stream),
+                          puffdiff_delta.data(), puffdiff_delta.size(),
+                          FLAGS_cache_size),  // max_cache_size
+        -1);
   }
   return 0;
 }

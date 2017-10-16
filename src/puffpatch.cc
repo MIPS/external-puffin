@@ -130,7 +130,8 @@ class BsdiffStream : public bsdiff::FileInterface {
 bool PuffPatch(UniqueStreamPtr src,
                UniqueStreamPtr dst,
                const uint8_t* patch,
-               size_t patch_length) {
+               size_t patch_length,
+               size_t max_cache_size) {
   size_t bsdiff_patch_offset;  // bsdiff offset in |patch|.
   size_t bsdiff_patch_size = 0;
   vector<BitExtent> src_deflates, dst_deflates;
@@ -146,9 +147,9 @@ bool PuffPatch(UniqueStreamPtr src,
   auto huffer = std::make_shared<Huffer>();
 
   // For reading from source.
-  std::unique_ptr<bsdiff::FileInterface> reader(
-      new BsdiffStream(PuffinStream::CreateForPuff(
-          std::move(src), puffer, src_puff_size, src_deflates, src_puffs)));
+  std::unique_ptr<bsdiff::FileInterface> reader(new BsdiffStream(
+      PuffinStream::CreateForPuff(std::move(src), puffer, src_puff_size,
+                                  src_deflates, src_puffs, max_cache_size)));
 
   // For writing into destination.
   std::unique_ptr<bsdiff::FileInterface> writer(

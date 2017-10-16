@@ -199,7 +199,14 @@ TEST_F(StreamTest, PuffinStreamTest) {
   auto read_stream = PuffinStream::CreateForPuff(
       MemoryStream::CreateForRead(kDeflates8), puffer, kPuffs8.size(),
       kSubblockDeflateExtents8, kPuffExtents8);
+  TestRead(read_stream.get(), kPuffs8);
+  TestSeek(read_stream.get(), false);
+  TestClose(read_stream.get());
 
+  // Test the stream with puff cache.
+  read_stream = PuffinStream::CreateForPuff(
+      MemoryStream::CreateForRead(kDeflates8), puffer, kPuffs8.size(),
+      kSubblockDeflateExtents8, kPuffExtents8, 8 /* max_cache_size */);
   TestRead(read_stream.get(), kPuffs8);
   TestSeek(read_stream.get(), false);
   TestClose(read_stream.get());

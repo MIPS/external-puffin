@@ -5,6 +5,7 @@
 #ifndef SRC_PUFFIN_STREAM_H_
 #define SRC_PUFFIN_STREAM_H_
 
+#include <list>
 #include <memory>
 #include <string>
 #include <utility>
@@ -38,11 +39,16 @@ class PuffinStream : public StreamInterface {
   //                 completely puffed.
   // |deflates|  IN  The location of deflates in |stream|.
   // |puffs|     IN  The location of puffs into the final puff stream.
+  // |max_cache_size| IN  The amount of memory to use for caching puff buffers.
+  //                      If the mount is smaller than the maximum puff buffer
+  //                      size in |puffs|, then its value will be set to zero
+  //                      and no puff will be cached.
   static UniqueStreamPtr CreateForPuff(UniqueStreamPtr stream,
                                        std::shared_ptr<Puffer> puffer,
                                        size_t puff_size,
                                        const std::vector<BitExtent>& deflates,
-                                       const std::vector<ByteExtent>& puffs);
+                                       const std::vector<ByteExtent>& puffs,
+                                       size_t max_cache_size = 0);
 
   // Creates a |PuffinStream| for writing puff buffers into a deflate stream.
   // |stream|    IN  The deflate stream.
@@ -86,11 +92,17 @@ class PuffinStream : public StreamInterface {
                std::shared_ptr<Huffer> huffer,
                size_t puff_size,
                const std::vector<BitExtent>& deflates,
-               const std::vector<ByteExtent>& puffs);
+               const std::vector<ByteExtent>& puffs,
+               size_t max_cache_size);
 
  private:
   // See |extra_byte_|.
   bool SetExtraByte();
+
+  // Returns the cache for the |puff_id|th puff. If it does not find it, either
+  // returns the least accessed cached (if cache is full) or creates a new empty
+  // buffer. It returns false if it cannot find the |puff_id|th puff cache.
+  bool GetPuffCache(int puff_id, size_t puff_size, SharedBufferPtr* buffer);
 
   UniqueStreamPtr stream_;
 
@@ -138,7 +150,15 @@ class PuffinStream : public StreamInterface {
   bool closed_;
 
   UniqueBufferPtr deflate_buffer_;
-  UniqueBufferPtr puff_buffer_;
+  SharedBufferPtr puff_buffer_;
+
+  // The list of puff buffer caches.
+  std::list<std::pair<int, SharedBufferPtr>> caches_;
+  // The maximum memory (in bytes) kept for caching puff buffers by an object of
+  // this class.
+  size_t max_cache_size_;
+  // The current amount of memory (in bytes) used for caching puff buffers.
+  size_t cur_cache_size_;
 
   DISALLOW_COPY_AND_ASSIGN(PuffinStream);
 };

@@ -17,16 +17,20 @@ extern const size_t kMagicLength;
 // |dst|. This function is used in the client and internally uses bspatch to
 // apply the patch. The input streams are of type |shared_ptr| because
 // |PuffPatch| needs to wrap these streams into another ones and we don't want
-// to loose the ownership of the input streams.
+// to loose the ownership of the input streams. Optionally one can cache the
+// puff buffers individually if non-zero value is passed |max_cache_size|.
+//
 // |src|           IN  Source deflate stream.
 // |dst|           IN  Destination deflate stream.
 // |patch|         IN  The input patch.
 // |patch_length|  IN  The length of the patch.
+// |max_cache_size|IN  The maximum amount of memory to cache puff buffers.
 PUFFIN_EXPORT
 bool PuffPatch(UniqueStreamPtr src,
                UniqueStreamPtr dst,
                const uint8_t* patch,
-               size_t patch_length);
+               size_t patch_length,
+               size_t max_cache_size = 0);
 
 }  // namespace puffin
 

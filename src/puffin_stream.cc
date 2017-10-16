@@ -31,12 +31,14 @@ UniqueStreamPtr PuffinStream::CreateForPuff(
     std::shared_ptr<Puffer> puffer,
     size_t puff_size,
     const std::vector<BitExtent>& deflates,
-    const std::vector<ByteExtent>& puffs) {
+    const std::vector<ByteExtent>& puffs,
+    size_t max_cache_size) {
   TEST_AND_RETURN_VALUE(puffs.size() == deflates.size(), nullptr);
   TEST_AND_RETURN_VALUE(stream->Seek(0), nullptr);
 
-  UniqueStreamPtr puffin_stream(new PuffinStream(
-      std::move(stream), puffer, nullptr, puff_size, deflates, puffs));
+  UniqueStreamPtr puffin_stream(new PuffinStream(std::move(stream), puffer,
+                                                 nullptr, puff_size, deflates,
+                                                 puffs, max_cache_size));
   TEST_AND_RETURN_VALUE(puffin_stream->Seek(0), nullptr);
   return puffin_stream;
 }
@@ -51,7 +53,7 @@ UniqueStreamPtr PuffinStream::CreateForHuff(
   TEST_AND_RETURN_VALUE(stream->Seek(0), nullptr);
 
   UniqueStreamPtr puffin_stream(new PuffinStream(
-      std::move(stream), nullptr, huffer, puff_size, deflates, puffs));
+      std::move(stream), nullptr, huffer, puff_size, deflates, puffs, 0));
   TEST_AND_RETURN_VALUE(puffin_stream->Seek(0), nullptr);
   return puffin_stream;
 }
@@ -61,7 +63,8 @@ PuffinStream::PuffinStream(UniqueStreamPtr stream,
                            shared_ptr<Huffer> huffer,
                            size_t puff_size,
                            const vector<BitExtent>& deflates,
-                           const vector<ByteExtent>& puffs)
+                           const vector<ByteExtent>& puffs,
+                           size_t max_cache_size)
     : stream_(std::move(stream)),
       puffer_(puffer),
       huffer_(huffer),
@@ -74,7 +77,9 @@ PuffinStream::PuffinStream(UniqueStreamPtr stream,
       last_byte_(0),
       extra_byte_(0),
       is_for_puff_(puffer_ ? true : false),
-      closed_(false) {
+      closed_(false),
+      max_cache_size_(max_cache_size),
+      cur_cache_size_(0) {
   // Building upper bounds for faster seek.
   upper_bounds_.reserve(puffs.size());
   for (const auto& puff : puffs) {
@@ -102,6 +107,10 @@ PuffinStream::PuffinStream(UniqueStreamPtr stream,
         std::max(max_puff_length, static_cast<size_t>(puff.length));
   }
   puff_buffer_.reset(new Buffer(max_puff_length + 1));
+  if (max_cache_size_ < max_puff_length) {
+    max_cache_size_ = 0;  // It means we are not caching puffs.
+  }
+
   size_t max_deflate_length = 0;
   for (const auto& deflate : deflates) {
     max_deflate_length =
@@ -225,31 +234,40 @@ bool PuffinStream::Read(void* buffer, size_t length) {
       auto start_byte = (cur_deflate_->offset / 8);
       auto end_byte = (cur_deflate_->offset + cur_deflate_->length + 7) / 8;
       auto bytes_to_read = end_byte - start_byte;
-
-      deflate_buffer_->resize(bytes_to_read);
-      TEST_AND_RETURN_FALSE(stream_->Seek(start_byte));
-      TEST_AND_RETURN_FALSE(
-          stream_->Read(deflate_buffer_->data(), bytes_to_read));
-      BufferBitReader bit_reader(deflate_buffer_->data(), bytes_to_read);
-
       // Puff directly to buffer if it has space.
       bool puff_directly_into_buffer =
-          (skip_bytes_ == 0) && (length - bytes_read >= cur_puff_->length);
-      BufferPuffWriter puff_writer(
-          puff_directly_into_buffer ? bytes + bytes_read : puff_buffer_->data(),
-          cur_puff_->length);
+          max_cache_size_ == 0 && (skip_bytes_ == 0) &&
+          (length - bytes_read >= cur_puff_->length);
 
-      // Drop the first unused bits.
-      size_t extra_bits_len = cur_deflate_->offset & 7;
-      TEST_AND_RETURN_FALSE(bit_reader.CacheBits(extra_bits_len));
-      bit_reader.DropBits(extra_bits_len);
+      auto cur_puff_idx = std::distance(puffs_.begin(), cur_puff_);
+      if (max_cache_size_ == 0 ||
+          !GetPuffCache(cur_puff_idx, cur_puff_->length, &puff_buffer_)) {
+        // Did not find the puff buffer in cache. We have to build it.
+        deflate_buffer_->resize(bytes_to_read);
+        TEST_AND_RETURN_FALSE(stream_->Seek(start_byte));
+        TEST_AND_RETURN_FALSE(
+            stream_->Read(deflate_buffer_->data(), bytes_to_read));
+        BufferBitReader bit_reader(deflate_buffer_->data(), bytes_to_read);
 
-      Error error;
-      TEST_AND_RETURN_FALSE(
-          puffer_->PuffDeflate(&bit_reader, &puff_writer, nullptr, &error));
-      TEST_AND_RETURN_FALSE(bytes_to_read == bit_reader.Offset());
-      TEST_AND_RETURN_FALSE(cur_puff_->length == puff_writer.Size());
+        BufferPuffWriter puff_writer(puff_directly_into_buffer
+                                         ? bytes + bytes_read
+                                         : puff_buffer_->data(),
+                                     cur_puff_->length);
 
+        // Drop the first unused bits.
+        size_t extra_bits_len = cur_deflate_->offset & 7;
+        TEST_AND_RETURN_FALSE(bit_reader.CacheBits(extra_bits_len));
+        bit_reader.DropBits(extra_bits_len);
+
+        Error error;
+        TEST_AND_RETURN_FALSE(
+            puffer_->PuffDeflate(&bit_reader, &puff_writer, nullptr, &error));
+        TEST_AND_RETURN_FALSE(bytes_to_read == bit_reader.Offset());
+        TEST_AND_RETURN_FALSE(cur_puff_->length == puff_writer.Size());
+      } else {
+        // Just seek to proper location.
+        TEST_AND_RETURN_FALSE(stream_->Seek(start_byte + bytes_to_read));
+      }
       // Copy from puff buffer to output if needed.
       auto bytes_to_copy =
           std::min(length - bytes_read,
@@ -394,6 +412,56 @@ bool PuffinStream::SetExtraByte() {
     extra_byte_ = 0;
   }
   return true;
+}
+
+bool PuffinStream::GetPuffCache(int puff_id,
+                                size_t puff_size,
+                                SharedBufferPtr* buffer) {
+  bool found = false;
+  // Search for it.
+  std::pair<int, SharedBufferPtr> cache;
+  // TODO(*): Find a faster way of doing this? Maybe change the data structure
+  // that supports faster search.
+  for (auto iter = caches_.begin(); iter != caches_.end(); ++iter) {
+    if (iter->first == puff_id) {
+      cache = std::move(*iter);
+      found = true;
+      // Remove it so later we can add it to the begining of the list.
+      caches_.erase(iter);
+      break;
+    }
+  }
+
+  // If not found, either create one or get one from the list.
+  if (!found) {
+    // If |caches_| were full, remove last ones in the list (least used), until
+    // we have enough space for the new cache.
+    while (!caches_.empty() && cur_cache_size_ + puff_size > max_cache_size_) {
+      cache = std::move(caches_.back());
+      caches_.pop_back();  // Remove it from the list.
+      cur_cache_size_ -= cache.second->capacity();
+    }
+    // If we have not populated the cache yet, create one.
+    if (!cache.second) {
+      cache.second.reset(new Buffer(puff_size));
+    }
+    cache.second->resize(puff_size);
+
+    constexpr size_t kMaxSizeDifference = 20 * 1024;
+    if (puff_size + kMaxSizeDifference < cache.second->capacity()) {
+      cache.second->shrink_to_fit();
+    }
+
+    cur_cache_size_ += cache.second->capacity();
+    cache.first = puff_id;
+  }
+
+  *buffer = cache.second;
+  // By now we have either removed a cache or created new one. Now we have to
+  // insert it in the front of the list so it becomes the most recently used
+  // one.
+  caches_.push_front(std::move(cache));
+  return found;
 }
 
 }  // namespace puffin
