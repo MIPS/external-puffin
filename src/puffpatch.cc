@@ -146,12 +146,9 @@ bool PuffPatch(UniqueStreamPtr src,
   auto huffer = std::make_shared<Huffer>();
 
   // For reading from source.
-  auto puffin_reader = PuffinStream::CreateForPuff(
-      std::move(src), puffer, src_puff_size, src_deflates, src_puffs);
-  SharedBufferPtr buffer(new Buffer(src_puff_size));
-  TEST_AND_RETURN_FALSE(puffin_reader->Read(buffer->data(), src_puff_size));
   std::unique_ptr<bsdiff::FileInterface> reader(
-      new BsdiffStream(MemoryStream::Create(buffer, true, false)));
+      new BsdiffStream(PuffinStream::CreateForPuff(
+          std::move(src), puffer, src_puff_size, src_deflates, src_puffs)));
 
   // For writing into destination.
   std::unique_ptr<bsdiff::FileInterface> writer(
