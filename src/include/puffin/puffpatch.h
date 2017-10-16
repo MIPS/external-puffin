@@ -10,6 +10,9 @@
 
 namespace puffin {
 
+extern const char kMagic[];
+extern const size_t kMagicLength;
+
 // Applies the puffin patch to deflate stream |src| to create deflate stream
 // |dst|. This function is used in the client and internally uses bspatch to
 // apply the patch. The input streams are of type |shared_ptr| because

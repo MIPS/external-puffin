@@ -28,10 +28,10 @@ namespace puffin {
 using std::string;
 using std::vector;
 
-namespace {
+const char kMagic[] = "PUF1";
+const size_t kMagicLength = 4;
 
-constexpr char kMagic[] = "PUF1";
-constexpr size_t kMagicLength = 4;
+namespace {
 
 template <typename T>
 void CopyRpfToVector(

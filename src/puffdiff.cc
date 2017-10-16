@@ -15,6 +15,7 @@
 
 #include "puffin/src/include/puffin/common.h"
 #include "puffin/src/include/puffin/puffer.h"
+#include "puffin/src/include/puffin/puffpatch.h"
 #include "puffin/src/include/puffin/stream.h"
 #include "puffin/src/include/puffin/utils.h"
 #include "puffin/src/puffin.pb.h"
@@ -27,9 +28,6 @@ using std::string;
 using std::vector;
 
 namespace {
-
-constexpr char kMagic[] = "PUF1";
-constexpr size_t kMagicLength = 4;
 
 template <typename T>
 void CopyVectorToRpf(
