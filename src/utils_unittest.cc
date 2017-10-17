@@ -7,8 +7,8 @@
 #include "gtest/gtest.h"
 
 #include "puffin/src/include/puffin/common.h"
-#include "puffin/src/include/puffin/stream.h"
 #include "puffin/src/include/puffin/utils.h"
+#include "puffin/src/memory_stream.h"
 #include "puffin/src/unittest_common.h"
 
 namespace puffin {

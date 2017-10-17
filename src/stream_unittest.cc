@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "puffin/src/include/puffin/stream.h"
-
 #include <numeric>
 
 #include "gtest/gtest.h"
@@ -11,6 +9,8 @@
 #include "puffin/src/include/puffin/huffer.h"
 #include "puffin/src/include/puffin/puffer.h"
 #include "puffin/src/extent_stream.h"
+#include "puffin/src/file_stream.h"
+#include "puffin/src/memory_stream.h"
 #include "puffin/src/puffin_stream.h"
 #include "puffin/src/unittest_common.h"
 

@@ -6,13 +6,14 @@ PUFFIN_SOURCES = \
 	bit_reader.cc \
 	bit_writer.cc \
 	extent_stream.cc \
+	file_stream.cc \
 	huffer.cc \
 	huffman_table.cc \
+	memory_stream.cc \
 	puffer.cc \
 	puff_reader.cc \
 	puff_writer.cc \
 	puffin_stream.cc \
-	stream.cc \
 	utils.cc
 
 UNITTEST_SOURCES = \

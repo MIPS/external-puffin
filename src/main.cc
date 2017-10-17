@@ -18,9 +18,9 @@
 #include "puffin/src/include/puffin/puffdiff.h"
 #include "puffin/src/include/puffin/puffer.h"
 #include "puffin/src/include/puffin/puffpatch.h"
-#include "puffin/src/include/puffin/stream.h"
 #include "puffin/src/include/puffin/utils.h"
 #include "puffin/src/extent_stream.h"
+#include "puffin/src/file_stream.h"
 #include "puffin/src/puffin_stream.h"
 #include "puffin/src/set_errors.h"
 

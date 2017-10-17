@@ -63,7 +63,6 @@
         'src/puffer.cc',
         'src/puffin_stream.cc',
         'src/puffpatch.cc',
-        'src/stream.cc',
       ],
       'all_dependent_settings': {
         'link_settings': {
@@ -80,6 +79,8 @@
       'cflags!': ['-fPIE'],
       'cflags': ['-fPIC'],
       'sources': [
+        'src/file_stream.cc',
+        'src/memory_stream.cc',
         'src/puffdiff.cc',
         'src/utils.cc',
       ],
