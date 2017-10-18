@@ -31,8 +31,14 @@ PUFFIN_EXPORT std::string ExtentsToString(const T& extents) {
 
 // Locates deflate buffer locations for a set of zlib buffers |zlibs| in
 // |src|. It performs by removing header and footer bytes from the zlib stream.
-PUFFIN_EXPORT
 bool LocateDeflatesInZlibBlocks(const UniqueStreamPtr& src,
+                                const std::vector<ByteExtent>& zlibs,
+                                std::vector<BitExtent>* deflates);
+
+// Similar to the function above, except that it accepts the file path to the
+// source.
+PUFFIN_EXPORT
+bool LocateDeflatesInZlibBlocks(const std::string& file_path,
                                 const std::vector<ByteExtent>& zlibs,
                                 std::vector<BitExtent>* deflates);
 
@@ -40,7 +46,6 @@ bool LocateDeflatesInZlibBlocks(const UniqueStreamPtr& src,
 // locations. Each subblock in practice is a deflate stream by itself.
 // Assumption is that the first subblock in each deflate in |deflates| start in
 // byte boundary.
-PUFFIN_EXPORT
 bool FindDeflateSubBlocks(const UniqueStreamPtr& src,
                           const std::vector<ByteExtent>& deflates,
                           std::vector<BitExtent>* subblock_deflates);
@@ -48,7 +53,6 @@ bool FindDeflateSubBlocks(const UniqueStreamPtr& src,
 // Finds the location of puffs in the deflate stream |src| based on the location
 // of |deflates| and populates the |puffs|. We assume |deflates| are sorted by
 // their offset value. |out_puff_size| will be the size of the puff stream.
-PUFFIN_EXPORT
 bool FindPuffLocations(const UniqueStreamPtr& src,
                        const std::vector<BitExtent>& deflates,
                        std::vector<ByteExtent>* puffs,

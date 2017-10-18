@@ -15,63 +15,63 @@
 
 namespace puffin {
 
-MemoryStream::MemoryStream(SharedBufferPtr memory, bool read, bool write)
-    : memory_(memory), read_(read), write_(write) {
-  if (write_ && !read) {
-    memory_->clear();
-  }
-  closed_ = false;
+UniqueStreamPtr MemoryStream::CreateForRead(const Buffer& memory) {
+  return UniqueStreamPtr(new MemoryStream(&memory, nullptr));
 }
 
-UniqueStreamPtr MemoryStream::Create(SharedBufferPtr memory,
-                                     bool read,
-                                     bool write) {
-  TEST_AND_RETURN_VALUE(read || write, nullptr);
-  auto stream = UniqueStreamPtr(new MemoryStream(memory, read, write));
-  TEST_AND_RETURN_VALUE(stream->Seek(0), nullptr);
-  return stream;
+UniqueStreamPtr MemoryStream::CreateForWrite(Buffer* memory) {
+  return UniqueStreamPtr(new MemoryStream(nullptr, memory));
 }
+
+MemoryStream::MemoryStream(const Buffer* read_memory, Buffer* write_memory)
+    : read_memory_(read_memory),
+      write_memory_(write_memory),
+      offset_(0),
+      open_(true) {}
 
 bool MemoryStream::GetSize(size_t* size) const {
-  *size = memory_->size();
+  *size =
+      read_memory_ != nullptr ? read_memory_->size() : write_memory_->size();
   return true;
 }
 
 bool MemoryStream::GetOffset(size_t* offset) const {
-  *offset = pos_;
+  *offset = offset_;
   return true;
 }
 
 bool MemoryStream::Seek(size_t offset) {
-  TEST_AND_RETURN_FALSE(!closed_);
-  TEST_AND_RETURN_FALSE(offset <= memory_->size());
-  pos_ = offset;
+  TEST_AND_RETURN_FALSE(open_);
+  size_t size;
+  GetSize(&size);
+  TEST_AND_RETURN_FALSE(offset <= size);
+  offset_ = offset;
   return true;
 }
 
 bool MemoryStream::Read(void* buffer, size_t length) {
-  TEST_AND_RETURN_FALSE(!closed_);
-  TEST_AND_RETURN_FALSE(read_);
-  TEST_AND_RETURN_FALSE(pos_ + length <= memory_->size());
-  memcpy(buffer, memory_->data() + pos_, length);
-  pos_ += length;
+  TEST_AND_RETURN_FALSE(open_);
+  TEST_AND_RETURN_FALSE(read_memory_ != nullptr);
+  TEST_AND_RETURN_FALSE(offset_ + length <= read_memory_->size());
+  memcpy(buffer, read_memory_->data() + offset_, length);
+  offset_ += length;
   return true;
 }
 
 bool MemoryStream::Write(const void* buffer, size_t length) {
   // TODO(ahassani): Add a maximum size limit to prevent malicious attacks.
-  TEST_AND_RETURN_FALSE(!closed_);
-  TEST_AND_RETURN_FALSE(write_);
-  if (pos_ + length > memory_->size()) {
-    memory_->resize(pos_ + length);
+  TEST_AND_RETURN_FALSE(open_);
+  TEST_AND_RETURN_FALSE(write_memory_ != nullptr);
+  if (offset_ + length > write_memory_->size()) {
+    write_memory_->resize(offset_ + length);
   }
-  memcpy(memory_->data() + pos_, buffer, length);
-  pos_ += length;
+  memcpy(write_memory_->data() + offset_, buffer, length);
+  offset_ += length;
   return true;
 }
 
 bool MemoryStream::Close() {
-  closed_ = true;
+  open_ = false;
   return true;
 }
 

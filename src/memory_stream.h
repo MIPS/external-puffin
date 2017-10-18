@@ -18,8 +18,13 @@ class MemoryStream : public StreamInterface {
  public:
   ~MemoryStream() override = default;
 
-  // The input buffer |memory| can grow as we write into it.
-  static UniqueStreamPtr Create(SharedBufferPtr memory, bool read, bool write);
+  // Creates a stream for reading.
+  static UniqueStreamPtr CreateForRead(const Buffer& memory);
+
+  // Creates a stream for writing. This function will clear the |memory| if
+  // |clear| is true. An instance of this class does not retain the ownership of
+  // the |memory|.
+  static UniqueStreamPtr CreateForWrite(Buffer* memory);
 
   bool GetSize(size_t* size) const override;
   bool GetOffset(size_t* offset) const override;
@@ -28,24 +33,21 @@ class MemoryStream : public StreamInterface {
   bool Write(const void* buffer, size_t length) override;
   bool Close() override;
 
- protected:
-  MemoryStream(SharedBufferPtr memory, bool read, bool write);
-
  private:
-  // The memory buffer.
-  SharedBufferPtr memory_;
+  // Ctor. Exactly one of the |read_memory| or |write_memory| should be nullptr.
+  MemoryStream(const Buffer* read_memory, Buffer* write_memory);
+
+  // The memory buffer for reading.
+  const Buffer* read_memory_;
+
+  // The memory buffer for writing. It can grow as we write into it.
+  Buffer* write_memory_;
 
   // The current offset.
-  size_t pos_;
+  size_t offset_;
 
-  // True if this stream is opened for reading.
-  bool read_;
-
-  // True if this stream is opened for writing.
-  bool write_;
-
-  // True if the |Close()| is called.
-  bool closed_;
+  // True if the stream is open.
+  bool open_;
 
   DISALLOW_COPY_AND_ASSIGN(MemoryStream);
 };

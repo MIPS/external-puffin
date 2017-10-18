@@ -29,16 +29,11 @@ void TestPatching(const Buffer& src_buf,
                   const vector<BitExtent>& src_deflates,
                   const vector<BitExtent>& dst_deflates,
                   const Buffer patch) {
-  SharedBufferPtr src_buf_ptr(new Buffer(src_buf));
-  SharedBufferPtr dst_buf_ptr(new Buffer(dst_buf));
-  auto src_stream = MemoryStream::Create(src_buf_ptr, true, false);
-  auto dst_stream = MemoryStream::Create(dst_buf_ptr, true, false);
-
   Buffer patch_out;
   string patch_path = "/tmp/patch.tmp";
   ScopedPathUnlinker scoped_unlinker(patch_path);
-  ASSERT_TRUE(PuffDiff(std::move(src_stream), std::move(dst_stream),
-                       src_deflates, dst_deflates, patch_path, &patch_out));
+  ASSERT_TRUE(PuffDiff(src_buf, dst_buf, src_deflates, dst_deflates, patch_path,
+                       &patch_out));
 
 #if PRINT_SAMPLE
   sample_generator::PrintArray("kPatchXXXXX", patch_out);
@@ -46,12 +41,12 @@ void TestPatching(const Buffer& src_buf,
 
   EXPECT_EQ(patch_out, patch);
 
-  src_stream = MemoryStream::Create(src_buf_ptr, true, false);
-  SharedBufferPtr dst_buf_ptr2(new Buffer());
-  auto dst_stream2 = MemoryStream::Create(dst_buf_ptr2, false, true);
-  ASSERT_TRUE(PuffPatch(std::move(src_stream), std::move(dst_stream2),
+  auto src_stream = MemoryStream::CreateForRead(src_buf);
+  Buffer dst_buf_out;
+  auto dst_stream = MemoryStream::CreateForWrite(&dst_buf_out);
+  ASSERT_TRUE(PuffPatch(std::move(src_stream), std::move(dst_stream),
                         patch.data(), patch.size()));
-  EXPECT_EQ(*dst_buf_ptr2, dst_buf);
+  EXPECT_EQ(dst_buf_out, dst_buf);
 }
 
 TEST(PatchingTest, Patching8To9Test) {

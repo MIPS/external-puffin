@@ -23,9 +23,18 @@ namespace puffin {
 //                     responsibility of unlinking the file after the call to
 //                     |PuffDiff| finishes.
 // |puffin_patch| OUT  The patch that later can be used in |PuffPatch|.
-PUFFIN_EXPORT
 bool PuffDiff(UniqueStreamPtr src,
               UniqueStreamPtr dst,
+              const std::vector<BitExtent>& src_deflates,
+              const std::vector<BitExtent>& dst_deflates,
+              const std::string& tmp_filepath,
+              Buffer* patch);
+
+// Similar to the function above, except that it accepts raw buffer rather than
+// stream.
+PUFFIN_EXPORT
+bool PuffDiff(const Buffer& src,
+              const Buffer& dst,
               const std::vector<BitExtent>& src_deflates,
               const std::vector<BitExtent>& dst_deflates,
               const std::string& tmp_filepath,

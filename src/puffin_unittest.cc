@@ -196,8 +196,7 @@ class PuffinTest : public ::testing::Test {
                                   const Buffer& puff_buffer,
                                   const vector<ByteExtent>& puff_extents) {
     std::shared_ptr<Puffer> puffer(new Puffer());
-    auto deflate_stream = MemoryStream::Create(
-        SharedBufferPtr(new Buffer(deflate_buffer)), true, false);
+    auto deflate_stream = MemoryStream::CreateForRead(deflate_buffer);
     ASSERT_TRUE(deflate_stream->Seek(0));
     vector<ByteExtent> out_puff_extents;
     size_t puff_size;
@@ -216,8 +215,8 @@ class PuffinTest : public ::testing::Test {
     EXPECT_EQ(out_puff_buffer, puff_buffer);
 
     std::shared_ptr<Huffer> huffer(new Huffer());
-    SharedBufferPtr out_deflate_buffer(new Buffer(deflate_buffer.size()));
-    deflate_stream = MemoryStream::Create(out_deflate_buffer, false, true);
+    Buffer out_deflate_buffer;
+    deflate_stream = MemoryStream::CreateForWrite(&out_deflate_buffer);
 
     src_puffin_stream =
         PuffinStream::CreateForHuff(std::move(deflate_stream), huffer,
@@ -225,7 +224,7 @@ class PuffinTest : public ::testing::Test {
 
     ASSERT_TRUE(
         src_puffin_stream->Write(puff_buffer.data(), puff_buffer.size()));
-    EXPECT_EQ(*out_deflate_buffer, deflate_buffer);
+    EXPECT_EQ(out_deflate_buffer, deflate_buffer);
   }
 
  protected:

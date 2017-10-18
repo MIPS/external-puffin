@@ -18,6 +18,7 @@
 #include "puffin/src/include/puffin/puffpatch.h"
 #include "puffin/src/include/puffin/utils.h"
 #include "puffin/src/file_stream.h"
+#include "puffin/src/memory_stream.h"
 #include "puffin/src/puffin.pb.h"
 #include "puffin/src/puffin_stream.h"
 #include "puffin/src/set_errors.h"
@@ -142,6 +143,17 @@ bool PuffDiff(UniqueStreamPtr src,
       bsdiff_patch_buf, src_deflates, dst_deflates, src_puffs, dst_puffs,
       src_puff_buffer.size(), dst_puff_buffer.size(), patch));
   return true;
+}
+
+bool PuffDiff(const Buffer& src,
+              const Buffer& dst,
+              const vector<BitExtent>& src_deflates,
+              const vector<BitExtent>& dst_deflates,
+              const string& tmp_filepath,
+              Buffer* patch) {
+  return PuffDiff(MemoryStream::CreateForRead(src),
+                  MemoryStream::CreateForRead(dst), src_deflates, dst_deflates,
+                  tmp_filepath, patch);
 }
 
 }  // namespace puffin

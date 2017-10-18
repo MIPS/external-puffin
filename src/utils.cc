@@ -10,10 +10,10 @@
 #include <vector>
 
 #include "puffin/src/bit_reader.h"
+#include "puffin/src/file_stream.h"
 #include "puffin/src/include/puffin/common.h"
 #include "puffin/src/include/puffin/errors.h"
 #include "puffin/src/include/puffin/puffer.h"
-#include "puffin/src/include/puffin/stream.h"
 #include "puffin/src/puff_writer.h"
 #include "puffin/src/set_errors.h"
 
@@ -109,6 +109,14 @@ bool FindDeflateSubBlocks(const UniqueStreamPtr& src,
     }
   }
   return true;
+}
+
+bool LocateDeflatesInZlibBlocks(const string& file_path,
+                                const vector<ByteExtent>& zlibs,
+                                vector<BitExtent>* deflates) {
+  auto src = FileStream::Open(file_path, true, false);
+  TEST_AND_RETURN_FALSE(src);
+  return LocateDeflatesInZlibBlocks(src, zlibs, deflates);
 }
 
 bool FindPuffLocations(const UniqueStreamPtr& src,

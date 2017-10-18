@@ -110,30 +110,30 @@ class StreamTest : public ::testing::Test {
     ASSERT_TRUE(stream->Write(buf.data(), 10));
   }
 
-  void TestWrite(StreamInterface* stream) {
+  void TestWrite(StreamInterface* write_stream, StreamInterface* read_stream) {
     size_t size;
-    ASSERT_TRUE(stream->GetSize(&size));
+    ASSERT_TRUE(read_stream->GetSize(&size));
     Buffer buf1(size);
     Buffer buf2(size);
     std::iota(buf1.begin(), buf1.end(), 0);
 
     // Make sure the write works.
-    ASSERT_TRUE(stream->Seek(0));
-    ASSERT_TRUE(stream->Write(buf1.data(), buf1.size()));
-    ASSERT_TRUE(stream->Seek(0));
-    ASSERT_TRUE(stream->Read(buf2.data(), buf2.size()));
+    ASSERT_TRUE(write_stream->Seek(0));
+    ASSERT_TRUE(write_stream->Write(buf1.data(), buf1.size()));
+    ASSERT_TRUE(read_stream->Seek(0));
+    ASSERT_TRUE(read_stream->Read(buf2.data(), buf2.size()));
     ASSERT_EQ(buf1, buf2);
 
     std::fill(buf2.begin(), buf2.end(), 0);
 
     // Write entire buffer one byte at a time. (all zeros).
-    ASSERT_TRUE(stream->Seek(0));
+    ASSERT_TRUE(write_stream->Seek(0));
     for (size_t idx = 0; idx < buf2.size(); idx++) {
-      ASSERT_TRUE(stream->Write(&buf2[idx], 1));
+      ASSERT_TRUE(write_stream->Write(&buf2[idx], 1));
     }
 
-    ASSERT_TRUE(stream->Seek(0));
-    ASSERT_TRUE(stream->Read(buf1.data(), buf1.size()));
+    ASSERT_TRUE(read_stream->Seek(0));
+    ASSERT_TRUE(read_stream->Read(buf1.data(), buf1.size()));
     ASSERT_EQ(buf1, buf2);
   }
 
@@ -158,17 +158,20 @@ class StreamTest : public ::testing::Test {
 };
 
 TEST_F(StreamTest, MemoryStreamTest) {
-  SharedBufferPtr buf(new Buffer(105));
-  std::iota(buf->begin(), buf->end(), 0);
+  Buffer buf(105);
+  std::iota(buf.begin(), buf.end(), 0);
 
-  ASSERT_FALSE(MemoryStream::Create(buf, false, false));
-  auto stream = MemoryStream::Create(buf, true, true);
+  auto read_stream = MemoryStream::CreateForRead(buf);
+  TestRead(read_stream.get(), buf);
+  TestSeek(read_stream.get(), false);
 
-  TestRead(stream.get(), *buf);
-  TestWrite(stream.get());
-  TestWriteBoundary(stream.get());
-  TestSeek(stream.get(), false);
-  TestClose(stream.get());
+  auto write_stream = MemoryStream::CreateForWrite(&buf);
+  TestWrite(write_stream.get(), read_stream.get());
+  TestWriteBoundary(write_stream.get());
+  TestSeek(write_stream.get(), false);
+
+  TestClose(read_stream.get());
+  TestClose(write_stream.get());
 }
 
 TEST_F(StreamTest, FileStreamTest) {
@@ -185,27 +188,26 @@ TEST_F(StreamTest, FileStreamTest) {
   ASSERT_TRUE(stream->Write(buf.data(), buf.size()));
 
   TestRead(stream.get(), buf);
-  TestWrite(stream.get());
+  TestWrite(stream.get(), stream.get());
   TestWriteBoundary(stream.get());
   TestSeek(stream.get(), true);
   TestClose(stream.get());
 }
 
 TEST_F(StreamTest, PuffinStreamTest) {
-  SharedBufferPtr buf(new Buffer(kDeflates8));
   shared_ptr<Puffer> puffer(new Puffer());
   auto read_stream = PuffinStream::CreateForPuff(
-      MemoryStream::Create(buf, true, false), puffer, kPuffs8.size(),
+      MemoryStream::CreateForRead(kDeflates8), puffer, kPuffs8.size(),
       kSubblockDeflateExtents8, kPuffExtents8);
 
   TestRead(read_stream.get(), kPuffs8);
   TestSeek(read_stream.get(), false);
   TestClose(read_stream.get());
 
-  SharedBufferPtr buf1(new Buffer(kDeflates8.size()));
+  Buffer buf(kDeflates8.size());
   shared_ptr<Huffer> huffer(new Huffer());
   auto write_stream = PuffinStream::CreateForHuff(
-      MemoryStream::Create(buf1, false, true), huffer, kPuffs8.size(),
+      MemoryStream::CreateForWrite(&buf), huffer, kPuffs8.size(),
       kSubblockDeflateExtents8, kPuffExtents8);
 
   ASSERT_TRUE(write_stream->Seek(0));
@@ -213,22 +215,22 @@ TEST_F(StreamTest, PuffinStreamTest) {
     ASSERT_TRUE(write_stream->Write(&kPuffs8[idx], 1));
   }
   // Make sure the write works
-  ASSERT_EQ(*buf1, kDeflates8);
+  ASSERT_EQ(buf, kDeflates8);
 
-  std::fill(buf1->begin(), buf1->end(), 0);
+  std::fill(buf.begin(), buf.end(), 0);
   ASSERT_TRUE(write_stream->Seek(0));
   ASSERT_TRUE(write_stream->Write(kPuffs8.data(), kPuffs8.size()));
   // Check its correctness.
-  ASSERT_EQ(*buf1, kDeflates8);
+  ASSERT_EQ(buf, kDeflates8);
 
   // Write entire buffer one byte at a time. (all zeros).
-  std::fill(buf1->begin(), buf1->end(), 0);
+  std::fill(buf.begin(), buf.end(), 0);
   ASSERT_TRUE(write_stream->Seek(0));
   for (const auto& byte : kPuffs8) {
     ASSERT_TRUE(write_stream->Write(&byte, 1));
   }
   // Check its correctness.
-  ASSERT_EQ(*buf1, kDeflates8);
+  ASSERT_EQ(buf, kDeflates8);
 
   // No TestSeek is needed as PuffinStream is not supposed to seek to anywhere
   // except 0.
@@ -236,30 +238,30 @@ TEST_F(StreamTest, PuffinStreamTest) {
 }
 
 TEST_F(StreamTest, ExtentStreamTest) {
-  SharedBufferPtr buf(new Buffer(100));
-  std::iota(buf->begin(), buf->end(), 0);
+  Buffer buf(100);
+  std::iota(buf.begin(), buf.end(), 0);
 
   vector<ByteExtent> extents = {{10, 10}, {25, 0}, {30, 10}};
   Buffer data = {10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
                  30, 31, 32, 33, 34, 35, 36, 37, 38, 39};
 
-  auto read_stream = ExtentStream::CreateForRead(
-      MemoryStream::Create(buf, true, false), extents);
+  auto read_stream =
+      ExtentStream::CreateForRead(MemoryStream::CreateForRead(buf), extents);
   TestSeek(read_stream.get(), false);
   TestRead(read_stream.get(), data);
   TestClose(read_stream.get());
 
-  SharedBufferPtr buf2(new Buffer(*buf));
+  auto buf2 = buf;
   std::fill(data.begin(), data.end(), 3);
   for (const auto& extent : extents) {
-    std::fill(buf->begin() + extent.offset,
-              buf->begin() + (extent.offset + extent.length), 3);
+    std::fill(buf.begin() + extent.offset,
+              buf.begin() + (extent.offset + extent.length), 3);
   }
   auto write_stream = ExtentStream::CreateForWrite(
-      MemoryStream::Create(buf2, true, true), extents);
+      MemoryStream::CreateForWrite(&buf2), extents);
   ASSERT_TRUE(write_stream->Seek(0));
   ASSERT_TRUE(write_stream->Write(data.data(), data.size()));
-  EXPECT_EQ(*buf2, *buf);
+  EXPECT_EQ(buf2, buf);
 
   TestSeek(write_stream.get(), false);
   TestClose(write_stream.get());

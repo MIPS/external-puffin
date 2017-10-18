@@ -19,8 +19,7 @@ namespace {
 void FindDeflatesInZlibBlocks(const Buffer& src,
                               const vector<ByteExtent>& zlibs,
                               const vector<BitExtent>& deflates) {
-  SharedBufferPtr src_buf(new Buffer(src));
-  auto src_stream = MemoryStream::Create(src_buf, true, false);
+  auto src_stream = MemoryStream::CreateForRead(src);
   vector<BitExtent> deflates_out;
   ASSERT_TRUE(LocateDeflatesInZlibBlocks(src_stream, zlibs, &deflates_out));
   ASSERT_EQ(deflates, deflates_out);
@@ -30,8 +29,7 @@ void CheckFindPuffLocation(const Buffer& compressed,
                            const vector<BitExtent>& deflates,
                            const vector<ByteExtent>& expected_puffs,
                            size_t expected_puff_size) {
-  SharedBufferPtr def_buf(new Buffer(compressed));
-  auto src = MemoryStream::Create(def_buf, true, false);
+  auto src = MemoryStream::CreateForRead(compressed);
   vector<ByteExtent> puffs;
   size_t puff_size;
   ASSERT_TRUE(FindPuffLocations(src, deflates, &puffs, &puff_size));
