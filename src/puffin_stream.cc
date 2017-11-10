@@ -26,6 +26,34 @@ using std::vector;
 using std::unique_ptr;
 using std::shared_ptr;
 
+namespace {
+
+bool CheckArgsIntegrity(size_t puff_size,
+                        const std::vector<BitExtent>& deflates,
+                        const std::vector<ByteExtent>& puffs) {
+  TEST_AND_RETURN_FALSE(puffs.size() == deflates.size());
+  // Check if the |puff_size| is actually greater than the last byte of the last
+  // puff in |puffs|.
+  if (!puffs.empty()) {
+    TEST_AND_RETURN_FALSE(puff_size >=
+                          puffs.back().offset + puffs.back().length);
+  }
+
+  // Check to make sure |puffs| and |deflates| are sorted and non-overlapping.
+  auto is_overlap = [](const auto& a, const auto& b) {
+    return (a.offset + a.length) > b.offset;
+  };
+  TEST_AND_RETURN_FALSE(deflates.end() == std::adjacent_find(deflates.begin(),
+                                                             deflates.end(),
+                                                             is_overlap));
+  TEST_AND_RETURN_FALSE(puffs.end() == std::adjacent_find(puffs.begin(),
+                                                          puffs.end(),
+                                                          is_overlap));
+  return true;
+}
+
+}  // namespace
+
 UniqueStreamPtr PuffinStream::CreateForPuff(
     UniqueStreamPtr stream,
     std::shared_ptr<Puffer> puffer,
@@ -33,7 +61,8 @@ UniqueStreamPtr PuffinStream::CreateForPuff(
     const std::vector<BitExtent>& deflates,
     const std::vector<ByteExtent>& puffs,
     size_t max_cache_size) {
-  TEST_AND_RETURN_VALUE(puffs.size() == deflates.size(), nullptr);
+  TEST_AND_RETURN_VALUE(CheckArgsIntegrity(puff_size, deflates, puffs),
+                        nullptr);
   TEST_AND_RETURN_VALUE(stream->Seek(0), nullptr);
 
   UniqueStreamPtr puffin_stream(new PuffinStream(std::move(stream), puffer,
@@ -49,7 +78,8 @@ UniqueStreamPtr PuffinStream::CreateForHuff(
     size_t puff_size,
     const std::vector<BitExtent>& deflates,
     const std::vector<ByteExtent>& puffs) {
-  TEST_AND_RETURN_VALUE(puffs.size() == deflates.size(), nullptr);
+  TEST_AND_RETURN_VALUE(CheckArgsIntegrity(puff_size, deflates, puffs),
+                        nullptr);
   TEST_AND_RETURN_VALUE(stream->Seek(0), nullptr);
 
   UniqueStreamPtr puffin_stream(new PuffinStream(
