@@ -55,6 +55,9 @@ bool DecodePatch(const uint8_t* patch,
                  size_t* src_puff_size,
                  size_t* dst_puff_size) {
   size_t offset = 0;
+  uint32_t header_size;
+  TEST_AND_RETURN_FALSE(patch_length >= (kMagicLength + sizeof(header_size)));
+
   string patch_magic(reinterpret_cast<const char*>(patch), kMagicLength);
   if (patch_magic != kMagic) {
     LOG(ERROR) << "Magic number for Puffin patch is incorrect: " << patch_magic;
@@ -63,10 +66,10 @@ bool DecodePatch(const uint8_t* patch,
   offset += kMagicLength;
 
   // Read the header size from big-endian mode.
-  uint32_t header_size;
   memcpy(&header_size, patch + offset, sizeof(header_size));
   header_size = be32toh(header_size);
   offset += sizeof(header_size);
+  TEST_AND_RETURN_FALSE(header_size <= (patch_length - offset));
 
   metadata::PatchHeader header;
   TEST_AND_RETURN_FALSE(header.ParseFromArray(patch + offset, header_size));
