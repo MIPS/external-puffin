@@ -90,7 +90,6 @@ const size_t kDefaultPuffCacheSize = 50 * 1024 * 1024;  // 50 MB
   DEFINE_bool(verbose, false,                                              \
               "Logs all the given parameters including internally "        \
               "generated ones");                                           \
-  DEFINE_uint64(puff_size, 0, "Size of the puff stream");                  \
   DEFINE_uint64(cache_size, kDefaultPuffCacheSize,                         \
                 "Maximum size to cache the puff stream. Used in puffpatch");
 
@@ -171,7 +170,7 @@ int main(int argc, char** argv) {
         dst_puffs);
     puffin::Buffer buffer(1024 * 1024);
     size_t bytes_wrote = 0;
-    while (bytes_wrote < FLAGS_puff_size) {
+    while (bytes_wrote < dst_puff_size) {
       auto write_size = std::min(
           buffer.size(), static_cast<size_t>(dst_puff_size - bytes_wrote));
       TEST_AND_RETURN_VALUE(reader->Read(buffer.data(), write_size), -1);
