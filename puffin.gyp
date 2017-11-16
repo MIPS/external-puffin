@@ -64,6 +64,9 @@
         'src/puffin_stream.cc',
         'src/puffpatch.cc',
       ],
+      'dependencies': [
+        'libpuffin-proto',
+      ],
       'all_dependent_settings': {
         'link_settings': {
           'libraries': [
@@ -84,6 +87,9 @@
         'src/puffdiff.cc',
         'src/utils.cc',
       ],
+      'dependencies': [
+        'libpuffpatch-static',
+      ],
       'all_dependent_settings': {
         'link_settings': {
           'libraries': [
@@ -97,7 +103,6 @@
       'target_name': 'libpuffpatch',
       'type': 'shared_library',
       'dependencies': [
-        'libpuffin-proto',
         'libpuffpatch-static',
       ],
     },
@@ -106,9 +111,7 @@
       'target_name': 'libpuffdiff',
       'type': 'shared_library',
       'dependencies': [
-        'libpuffin-proto',
         'libpuffdiff-static',
-        'libpuffpatch-static',
       ],
     },
     # Puffin executable. We don't use the shared libraries because then we have
@@ -117,9 +120,7 @@
       'target_name': 'puffin',
       'type': 'executable',
       'dependencies': [
-        'libpuffin-proto',
         'libpuffdiff-static',
-        'libpuffpatch-static',
       ],
       'sources': [
         'src/extent_stream.cc',
@@ -151,9 +152,7 @@
           'target_name': 'puffin_unittest',
           'type': 'executable',
           'dependencies': [
-            'libpuffin-proto',
             'libpuffdiff-static',
-            'libpuffpatch-static',
             'libsample_generator',
             '../../platform2/common-mk/testrunner.gyp:testrunner',
           ],
