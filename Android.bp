@@ -13,6 +13,7 @@ cc_defaults {
     export_include_dirs: ["src/include"],
     cflags: [
         "-DUSE_BRILLO=1",
+        "-D_FILE_OFFSET_BITS=64",
         "-Wall",
         "-Werror",
         "-Wextra",

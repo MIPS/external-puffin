@@ -21,6 +21,7 @@
     ],
     'defines': [
       'USE_BRILLO=1',
+      '_FILE_OFFSET_BITS=64',
     ],
   },
   'targets': [
