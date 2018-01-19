@@ -22,6 +22,7 @@
     'defines': [
       'USE_BRILLO=1',
       '_FILE_OFFSET_BITS=64',
+      'ZLIB_CONST',
     ],
   },
   'targets': [
@@ -92,6 +93,11 @@
         'libpuffpatch-static',
       ],
       'all_dependent_settings': {
+        'variables': {
+          'deps': [
+            'zlib',
+          ],
+        },
         'link_settings': {
           'libraries': [
             '-lbsdiff',

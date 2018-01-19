@@ -5,17 +5,74 @@
 #include "puffin/src/include/puffin/utils.h"
 
 #include <inttypes.h>
+#include <string.h>
 
 #include <string>
 #include <vector>
+
+#include <zlib.h>
 
 #include "puffin/src/bit_reader.h"
 #include "puffin/src/file_stream.h"
 #include "puffin/src/include/puffin/common.h"
 #include "puffin/src/include/puffin/errors.h"
 #include "puffin/src/include/puffin/puffer.h"
+#include "puffin/src/memory_stream.h"
 #include "puffin/src/puff_writer.h"
 #include "puffin/src/set_errors.h"
+
+namespace {
+// Use memcpy to access the unaligned data of type |T|.
+template <typename T>
+inline T get_unaligned(const void* address) {
+  T result;
+  memcpy(&result, address, sizeof(T));
+  return result;
+}
+
+// Calculate both the compressed size and uncompressed size of the deflate
+// block that starts from the offset |start| of buffer |data|.
+bool CalculateSizeOfDeflateBlock(const puffin::Buffer& data,
+                                 size_t start,
+                                 size_t* compressed_size,
+                                 size_t* uncompressed_size) {
+  TEST_AND_RETURN_FALSE(compressed_size != nullptr &&
+                        uncompressed_size != nullptr);
+
+  TEST_AND_RETURN_FALSE(start < data.size());
+
+  z_stream strm = {};
+  strm.avail_in = data.size() - start;
+  strm.next_in = data.data() + start;
+
+  // -15 means we are decoding a 'raw' stream without zlib headers.
+  if (inflateInit2(&strm, -15)) {
+    LOG(ERROR) << "Failed to initialize inflate: " << strm.msg;
+    return false;
+  }
+
+  const unsigned int kBufferSize = 32768;
+  std::vector<uint8_t> uncompressed_data(kBufferSize);
+  *uncompressed_size = 0;
+  int status = Z_OK;
+  do {
+    // Overwrite the same buffer since we don't need the uncompressed data.
+    strm.avail_out = kBufferSize;
+    strm.next_out = uncompressed_data.data();
+    status = inflate(&strm, Z_NO_FLUSH);
+    if (status < 0) {
+      LOG(ERROR) << "Inflate failed: " << strm.msg << ", has decompressed "
+                 << *uncompressed_size << " bytes.";
+      return false;
+    }
+    *uncompressed_size += kBufferSize - strm.avail_out;
+  } while (status != Z_STREAM_END);
+
+  *compressed_size = data.size() - start - strm.avail_in;
+  return true;
+}
+
+}  // namespace
 
 namespace puffin {
 
@@ -117,6 +174,95 @@ bool LocateDeflatesInZlibBlocks(const string& file_path,
   auto src = FileStream::Open(file_path, true, false);
   TEST_AND_RETURN_FALSE(src);
   return LocateDeflatesInZlibBlocks(src, zlibs, deflates);
+}
+
+// For more information about the zip format, refer to
+// https://support.pkware.com/display/PKZIP/APPNOTE
+bool LocateDeflatesInZipArchive(const Buffer& data,
+                                vector<ByteExtent>* deflate_blocks) {
+  size_t pos = 0;
+  while (pos <= data.size() - 30) {
+    // TODO(xunchang) add support for big endian system when searching for
+    // magic numbers.
+    if (get_unaligned<uint32_t>(data.data() + pos) != 0x04034b50) {
+      pos++;
+      continue;
+    }
+
+    // local file header format
+    // 0      4     0x04034b50
+    // 4      2     minimum version needed to extract
+    // 6      2     general purpose bit flag
+    // 8      2     compression method
+    // 10     4     file last modification date & time
+    // 14     4     CRC-32
+    // 18     4     compressed size
+    // 22     4     uncompressed size
+    // 26     2     file name length
+    // 28     2     extra field length
+    // 30     n     file name
+    // 30+n   m     extra field
+    auto compression_method = get_unaligned<uint16_t>(data.data() + pos + 8);
+    if (compression_method != 8) {  // non-deflate type
+      pos += 4;
+      continue;
+    }
+
+    auto compressed_size = get_unaligned<uint32_t>(data.data() + pos + 18);
+    auto uncompressed_size = get_unaligned<uint32_t>(data.data() + pos + 22);
+    auto file_name_length = get_unaligned<uint16_t>(data.data() + pos + 26);
+    auto extra_field_length = get_unaligned<uint16_t>(data.data() + pos + 28);
+    uint64_t header_size = 30 + file_name_length + extra_field_length;
+
+    // sanity check
+    if (static_cast<uint64_t>(header_size) + compressed_size > data.size() ||
+        pos > data.size() - header_size - compressed_size) {
+      pos += 4;
+      continue;
+    }
+
+    size_t calculated_compressed_size;
+    size_t calculated_uncompressed_size;
+    if (!CalculateSizeOfDeflateBlock(data, pos + header_size,
+                                     &calculated_compressed_size,
+                                     &calculated_uncompressed_size)) {
+      LOG(ERROR) << "Failed to decompress the zip entry starting from: " << pos
+                 << ", skip adding deflates for this entry.";
+      pos += 4;
+      continue;
+    }
+
+    // Double check the compressed size and uncompressed size if they are
+    // available in the file header.
+    if (compressed_size > 0 && compressed_size != calculated_compressed_size) {
+      LOG(WARNING) << "Compressed size in the file header: " << compressed_size
+                   << " doesn't equal the real size: "
+                   << calculated_compressed_size;
+    }
+
+    if (uncompressed_size > 0 &&
+        uncompressed_size != calculated_uncompressed_size) {
+      LOG(WARNING) << "Uncompressed size in the file header: "
+                   << uncompressed_size << " doesn't equal the real size: "
+                   << calculated_uncompressed_size;
+    }
+
+    deflate_blocks->emplace_back(pos + header_size, calculated_compressed_size);
+    pos += header_size + calculated_compressed_size;
+  }
+
+  return true;
+}
+
+bool LocateDeflateSubBlocksInZipArchive(const Buffer& data,
+                                        vector<BitExtent>* deflates) {
+  vector<ByteExtent> deflate_blocks;
+  if (!LocateDeflatesInZipArchive(data, &deflate_blocks)) {
+    return false;
+  }
+
+  auto src = MemoryStream::CreateForRead(data);
+  return FindDeflateSubBlocks(src, deflate_blocks, deflates);
 }
 
 bool FindPuffLocations(const UniqueStreamPtr& src,

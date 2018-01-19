@@ -42,6 +42,17 @@ bool LocateDeflatesInZlibBlocks(const std::string& file_path,
                                 const std::vector<ByteExtent>& zlibs,
                                 std::vector<BitExtent>* deflates);
 
+// Search for the deflates in a zip archive, and put the result in
+// |deflate_blocks|.
+bool LocateDeflatesInZipArchive(const Buffer& data,
+                                std::vector<ByteExtent>* deflate_blocks);
+
+PUFFIN_EXPORT
+// Create a list of deflate subblock locations from the deflate blocks in a
+// zip archive.
+bool LocateDeflateSubBlocksInZipArchive(const Buffer& data,
+                                        std::vector<BitExtent>* deflates);
+
 // Reads the deflates in from |deflates| and returns a list of its subblock
 // locations. Each subblock in practice is a deflate stream by itself.
 // Assumption is that the first subblock in each deflate in |deflates| start in
