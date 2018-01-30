@@ -28,7 +28,6 @@ ExtentStream::ExtentStream(UniqueStreamPtr stream,
                            bool is_for_write)
     : stream_(std::move(stream)),
       extents_(extents),
-      cur_extent_(extents_.begin()),
       cur_extent_offset_(0),
       is_for_write_(is_for_write),
       offset_(0) {
@@ -47,6 +46,7 @@ ExtentStream::ExtentStream(UniqueStreamPtr stream,
   // - Seek: when seeking to the end of extents
   // - DoReadOrWrite: when changing the current extent.
   extents_.emplace_back(extent_end, 0);
+  cur_extent_ = extents_.begin();
 }
 
 bool ExtentStream::GetSize(size_t* size) const {
@@ -97,7 +97,7 @@ bool ExtentStream::DoReadOrWrite(void* read_buffer,
   uint64_t bytes_passed = 0;
   while (bytes_passed < length) {
     if (cur_extent_ == extents_.end()) {
-      TEST_AND_RETURN_FALSE(bytes_passed == length);
+      return false;
     }
     uint64_t bytes_to_pass = std::min(length - bytes_passed,
                                       cur_extent_->length - cur_extent_offset_);
@@ -121,7 +121,9 @@ bool ExtentStream::DoReadOrWrite(void* read_buffer,
       // We have to advance the cur_extent_;
       cur_extent_++;
       cur_extent_offset_ = 0;
-      TEST_AND_RETURN_FALSE(stream_->Seek(cur_extent_->offset));
+      if (cur_extent_ != extents_.end()) {
+        TEST_AND_RETURN_FALSE(stream_->Seek(cur_extent_->offset));
+      }
     }
   }
   return true;
