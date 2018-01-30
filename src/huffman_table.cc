@@ -42,8 +42,12 @@ const uint8_t kDistanceExtraBits[30] = {
   9, 10, 10, 11, 11, 12, 12, 13, 13};
 // clang-format on
 
-// 286 is the maximum needed.
-HuffmanTable::HuffmanTable() : codeindexpairs_(286), initialized_(false) {}
+// 288 is the maximum number of needed huffman codes for an alphabet. Fixed
+// huffman table needs 288 and dynamic huffman table needs maximum 286.
+// 286 = 256 (coding a byte) +
+//         1 (coding the end of block symbole) +
+//        29 (coding the lengths)
+HuffmanTable::HuffmanTable() : codeindexpairs_(288), initialized_(false) {}
 
 bool HuffmanTable::InitHuffmanCodes(const Buffer& lens, size_t* max_bits) {
   // Temporary buffers used in |InitHuffmanCodes|.
@@ -150,7 +154,7 @@ bool HuffmanTable::BuildHuffmanReverseCodes(const Buffer& lens,
 
   size_t index = 0;
   for (size_t idx = 0; idx < rcodes->size(); idx++) {
-    if (idx == codeindexpairs_[index].index) {
+    if (index < codeindexpairs_.size() && idx == codeindexpairs_[index].index) {
       (*rcodes)[idx] = codeindexpairs_[index].code;
       index++;
     } else {
