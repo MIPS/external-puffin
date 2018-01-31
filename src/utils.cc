@@ -5,7 +5,6 @@
 #include "puffin/src/include/puffin/utils.h"
 
 #include <inttypes.h>
-#include <string.h>
 
 #include <string>
 #include <vector>
@@ -69,6 +68,7 @@ bool CalculateSizeOfDeflateBlock(const puffin::Buffer& data,
   } while (status != Z_STREAM_END);
 
   *compressed_size = data.size() - start - strm.avail_in;
+  TEST_AND_RETURN_FALSE(inflateEnd(&strm) == Z_OK);
   return true;
 }
 
