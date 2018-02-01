@@ -176,5 +176,23 @@
         },
       ],
     }],
+    # fuzzer target
+    ['USE_fuzzer == 1', {
+      'targets': [
+        {
+          'target_name': 'puffin_fuzzer',
+          'type': 'executable',
+          'dependencies': [
+            'libpuffin-proto',
+            'libpuffdiff-static',
+            'libpuffpatch-static',
+          ],
+          'includes': ['../../platform2/common-mk/common_fuzzer.gypi'],
+          'sources': [
+            'src/fuzzer.cc',
+          ],
+        },
+      ],
+    }],
   ],
 }
