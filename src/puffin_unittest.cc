@@ -88,7 +88,7 @@ class PuffinTest : public ::testing::Test {
         puffer_.PuffDeflate(&bit_reader, &puff_writer, nullptr, error));
     TEST_AND_RETURN_FALSE_SET_ERROR(comp_size == bit_reader.Offset(),
                                     Error::kInvalidInput);
-    TEST_AND_RETURN_FALSE_SET_ERROR(puff_size = puff_writer.Size(),
+    TEST_AND_RETURN_FALSE_SET_ERROR(puff_size == puff_writer.Size(),
                                     Error::kInvalidInput);
     return true;
   }

@@ -229,6 +229,12 @@ bool HuffmanTable::BuildDynamicHuffmanTable(BitReaderInterface* br,
 
     distance_lens_.resize(30);
     distance_hcodes_.resize(1 << 15);
+
+    // 286: Maximum number of literal/lengths symbols.
+    // 30: Maximum number of distance symbols.
+    // The reason we reserve this to the sum of both maximum sizes is that we
+    // need to calculate both huffman codes contiguously. See b/72815313.
+    tmp_lens_.resize(286 + 30);
     initialized_ = true;
   }
 
@@ -289,32 +295,26 @@ bool HuffmanTable::BuildDynamicHuffmanTable(BitReaderInterface* br,
       BuildHuffmanCodes(code_lens_, &code_hcodes_, &code_max_bits_),
       Error::kInvalidInput);
 
-  // Build literals/lengths Huffman code length array.
+  // Build literals/lengths and distance Huffman code length arrays.
   auto bytes_available = (*length - index);
-  TEST_AND_RETURN_FALSE(BuildHuffmanCodeLengths(br,
-                                                buffer + index,
-                                                &bytes_available,
-                                                code_max_bits_,
-                                                num_lit_len,
-                                                &lit_len_lens_,
-                                                error));
+  tmp_lens_.clear();
+  TEST_AND_RETURN_FALSE(BuildHuffmanCodeLengths(
+      br, buffer + index, &bytes_available, code_max_bits_,
+      num_lit_len + num_distance, &tmp_lens_, error));
   index += bytes_available;
 
-  // Build literals/lengths Huffman codes.
+  // TODO(ahassani): Optimize this so the memcpy is not needed anymore.
+  lit_len_lens_.clear();
+  lit_len_lens_.insert(lit_len_lens_.begin(), tmp_lens_.begin(),
+                       tmp_lens_.begin() + num_lit_len);
+
+  distance_lens_.clear();
+  distance_lens_.insert(distance_lens_.begin(), tmp_lens_.begin() + num_lit_len,
+                        tmp_lens_.end());
+
   TEST_AND_RETURN_FALSE_SET_ERROR(
       BuildHuffmanCodes(lit_len_lens_, &lit_len_hcodes_, &lit_len_max_bits_),
       Error::kInvalidInput);
-
-  // Build distance Huffman code length array.
-  bytes_available = (*length - index);
-  TEST_AND_RETURN_FALSE(BuildHuffmanCodeLengths(br,
-                                                buffer + index,
-                                                &bytes_available,
-                                                code_max_bits_,
-                                                num_distance,
-                                                &distance_lens_,
-                                                error));
-  index += bytes_available;
 
   // Build distance Huffman codes.
   TEST_AND_RETURN_FALSE_SET_ERROR(
@@ -394,6 +394,7 @@ bool HuffmanTable::BuildHuffmanCodeLengths(BitReaderInterface* br,
       }
     }
   }
+  TEST_AND_RETURN_FALSE(lens->size() == num_codes);
   *length = index;
   return true;
 }
@@ -412,6 +413,8 @@ bool HuffmanTable::BuildDynamicHuffmanTable(const uint8_t* buffer,
 
     distance_lens_.resize(30);
     distance_rcodes_.resize(30);
+
+    tmp_lens_.resize(286 + 30);
 
     initialized_ = true;
   }
@@ -462,31 +465,26 @@ bool HuffmanTable::BuildDynamicHuffmanTable(const uint8_t* buffer,
       BuildHuffmanReverseCodes(code_lens_, &code_rcodes_, &code_max_bits_),
       Error::kInvalidInput);
 
-  // Build literal/lengths Huffman code lengths.
+  // Build literal/lengths and distance Huffman code length arrays.
   auto bytes_available = length - index;
-  TEST_AND_RETURN_FALSE(BuildHuffmanCodeLengths(buffer + index,
-                                                &bytes_available,
-                                                bw,
-                                                num_lit_len,
-                                                &lit_len_lens_,
-                                                error));
+  TEST_AND_RETURN_FALSE(
+      BuildHuffmanCodeLengths(buffer + index, &bytes_available, bw,
+                              num_lit_len + num_distance, &tmp_lens_, error));
   index += bytes_available;
+
+  lit_len_lens_.clear();
+  lit_len_lens_.insert(lit_len_lens_.begin(), tmp_lens_.begin(),
+                       tmp_lens_.begin() + num_lit_len);
+
+  distance_lens_.clear();
+  distance_lens_.insert(distance_lens_.begin(), tmp_lens_.begin() + num_lit_len,
+                        tmp_lens_.end());
 
   // Build literal/lengths Huffman reverse codes.
   TEST_AND_RETURN_FALSE_SET_ERROR(
       BuildHuffmanReverseCodes(
           lit_len_lens_, &lit_len_rcodes_, &lit_len_max_bits_),
       Error::kInvalidInput);
-
-  // Build distance Huffman code lengths array.
-  bytes_available = length - index;
-  TEST_AND_RETURN_FALSE(BuildHuffmanCodeLengths(buffer + index,
-                                                &bytes_available,
-                                                bw,
-                                                num_distance,
-                                                &distance_lens_,
-                                                error));
-  index += bytes_available;
 
   // Build distance Huffman reverse codes.
   TEST_AND_RETURN_FALSE_SET_ERROR(
@@ -558,6 +556,7 @@ bool HuffmanTable::BuildHuffmanCodeLengths(const uint8_t* buffer,
       }
     }
   }
+  TEST_AND_RETURN_FALSE(lens->size() == num_codes);
   *length = index;
   return true;
 }

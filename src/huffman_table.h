@@ -283,6 +283,10 @@ class HuffmanTable {
   std::vector<uint16_t> distance_rcodes_;
   size_t distance_max_bits_;
 
+  // The reason for keeping a temporary buffer here is to avoid reallocing each
+  // time.
+  std::vector<uint8_t> tmp_lens_;
+
   // Used in building Huffman codes for reading and decoding literal/length and
   // distance Huffman code length arrays.
   std::vector<uint8_t> code_lens_;
