@@ -28,7 +28,7 @@ UniqueStreamPtr FileStream::Open(const string& path, bool read, bool write) {
     flags |= O_WRONLY | O_CREAT;
   }
 
-  mode_t mode = 664;  // -rw-r--r--
+  mode_t mode = 0644;  // -rw-r--r--
   int fd = open(path.c_str(), flags, mode);
   TEST_AND_RETURN_VALUE(fd >= 0, nullptr);
   return UniqueStreamPtr(new FileStream(fd));
