@@ -87,6 +87,9 @@ const size_t kDefaultPuffCacheSize = 50 * 1024 * 1024;  // 50 MB
                 "Target extents in the format of offset:length,...");      \
   DEFINE_string(operation, "",                                             \
                 "Type of the operation: puff, huff, puffdiff, puffpatch"); \
+  DEFINE_string(src_file_type, "",                                         \
+                "Type of the input source file: deflate, gzip, "           \
+                "zlib or zip");                                            \
   DEFINE_bool(verbose, false,                                              \
               "Logs all the given parameters including internally "        \
               "generated ones");                                           \
@@ -120,21 +123,6 @@ int main(int argc, char** argv) {
   auto src_extents = StringToExtents<ByteExtent>(FLAGS_src_extents);
   auto dst_extents = StringToExtents<ByteExtent>(FLAGS_dst_extents);
 
-  if (FLAGS_verbose) {
-    LOG(INFO) << "src_deflates_byte: "
-              << puffin::ExtentsToString(src_deflates_byte);
-    LOG(INFO) << "dst_deflates_byte: "
-              << puffin::ExtentsToString(dst_deflates_byte);
-    LOG(INFO) << "src_deflates_bit: "
-              << puffin::ExtentsToString(src_deflates_bit);
-    LOG(INFO) << "dst_deflates_bit: "
-              << puffin::ExtentsToString(dst_deflates_bit);
-    LOG(INFO) << "src_puffs: " << puffin::ExtentsToString(src_puffs);
-    LOG(INFO) << "dst_puffs: " << puffin::ExtentsToString(dst_puffs);
-    LOG(INFO) << "src_extents: " << puffin::ExtentsToString(src_extents);
-    LOG(INFO) << "dst_extents: " << puffin::ExtentsToString(dst_extents);
-  }
-
   auto src_stream = FileStream::Open(FLAGS_src_file, true, false);
   TEST_AND_RETURN_VALUE(src_stream, -1);
   if (!src_extents.empty()) {
@@ -142,6 +130,34 @@ int main(int argc, char** argv) {
         ExtentStream::CreateForRead(std::move(src_stream), src_extents);
     TEST_AND_RETURN_VALUE(src_stream, -1);
   }
+
+  if (!FLAGS_src_file_type.empty()) {
+    TEST_AND_RETURN_VALUE(FLAGS_operation == "puff", -1);
+    size_t stream_size;
+    TEST_AND_RETURN_VALUE(src_stream->GetSize(&stream_size), -1);
+    if (FLAGS_src_file_type == "deflate") {
+      src_deflates_byte = {ByteExtent(0, stream_size)};
+    } else if (FLAGS_src_file_type == "zlib") {
+      std::vector<ByteExtent> zlibs = {ByteExtent(0, stream_size)};
+      TEST_AND_RETURN_VALUE(puffin::LocateDeflatesInZlibBlocks(
+                                src_stream, zlibs, &src_deflates_bit),
+                            -1);
+    } else if (FLAGS_src_file_type == "gzip") {
+      // TODO(ahassani): Implement gzip format parsing
+    } else if (FLAGS_src_file_type == "zip") {
+      puffin::Buffer src_data(stream_size);
+      TEST_AND_RETURN_VALUE(src_stream->Read(src_data.data(), src_data.size()),
+                            -1);
+      TEST_AND_RETURN_VALUE(
+          puffin::LocateDeflatesInZipArchive(src_data, &src_deflates_byte), -1);
+    } else {
+      LOG(ERROR) << "Unknown file type: " << FLAGS_src_file_type;
+      return -1;
+    }
+  }
+
+  // Return the stream to its zero offset in case we used it.
+  TEST_AND_RETURN_VALUE(src_stream->Seek(0), -1);
 
   vector<ByteExtent> puffs;
   if (FLAGS_operation == "puff") {
@@ -161,9 +177,6 @@ int main(int argc, char** argv) {
     TEST_AND_RETURN_VALUE(FindPuffLocations(src_stream, src_deflates_bit,
                                             &dst_puffs, &dst_puff_size),
                           -1);
-    if (FLAGS_verbose) {
-      LOG(INFO) << "out_dst_puffs: " << puffin::ExtentsToString(dst_puffs);
-    }
     // Puff using the given puff_size.
     auto reader = puffin::PuffinStream::CreateForPuff(
         std::move(src_stream), puffer, dst_puff_size, src_deflates_bit,
@@ -265,6 +278,21 @@ int main(int argc, char** argv) {
                           puffdiff_delta.data(), puffdiff_delta.size(),
                           FLAGS_cache_size),  // max_cache_size
         -1);
+  }
+
+  if (FLAGS_verbose) {
+    LOG(INFO) << "src_deflates_byte: "
+              << puffin::ExtentsToString(src_deflates_byte);
+    LOG(INFO) << "dst_deflates_byte: "
+              << puffin::ExtentsToString(dst_deflates_byte);
+    LOG(INFO) << "src_deflates_bit: "
+              << puffin::ExtentsToString(src_deflates_bit);
+    LOG(INFO) << "dst_deflates_bit: "
+              << puffin::ExtentsToString(dst_deflates_bit);
+    LOG(INFO) << "src_puffs: " << puffin::ExtentsToString(src_puffs);
+    LOG(INFO) << "dst_puffs: " << puffin::ExtentsToString(dst_puffs);
+    LOG(INFO) << "src_extents: " << puffin::ExtentsToString(src_extents);
+    LOG(INFO) << "dst_extents: " << puffin::ExtentsToString(dst_extents);
   }
   return 0;
 }
