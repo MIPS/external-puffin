@@ -13,14 +13,15 @@
 #include "gflags/gflags.h"
 #endif
 
+#include "puffin/src/extent_stream.h"
+#include "puffin/src/file_stream.h"
 #include "puffin/src/include/puffin/common.h"
 #include "puffin/src/include/puffin/huffer.h"
 #include "puffin/src/include/puffin/puffdiff.h"
 #include "puffin/src/include/puffin/puffer.h"
 #include "puffin/src/include/puffin/puffpatch.h"
 #include "puffin/src/include/puffin/utils.h"
-#include "puffin/src/extent_stream.h"
-#include "puffin/src/file_stream.h"
+#include "puffin/src/memory_stream.h"
 #include "puffin/src/puffin_stream.h"
 #include "puffin/src/set_errors.h"
 
@@ -31,6 +32,7 @@ using puffin::Error;
 using puffin::ExtentStream;
 using puffin::FileStream;
 using puffin::Huffer;
+using puffin::MemoryStream;
 using puffin::Puffer;
 using puffin::PuffinStream;
 using puffin::UniqueStreamPtr;
@@ -88,7 +90,8 @@ const size_t kDefaultPuffCacheSize = 50 * 1024 * 1024;  // 50 MB
   DEFINE_string(dst_extents, "",                                           \
                 "Target extents in the format of offset:length,...");      \
   DEFINE_string(operation, "",                                             \
-                "Type of the operation: puff, huff, puffdiff, puffpatch"); \
+                "Type of the operation: puff, huff, puffdiff, puffpatch, " \
+                "puffhuff");                                               \
   DEFINE_string(src_file_type, "",                                         \
                 "Type of the input source file: deflate, gzip, "           \
                 "zlib or zip");                                            \
@@ -134,7 +137,8 @@ int main(int argc, char** argv) {
   }
 
   if (!FLAGS_src_file_type.empty()) {
-    TEST_AND_RETURN_VALUE(FLAGS_operation == "puff", -1);
+    TEST_AND_RETURN_VALUE(
+        FLAGS_operation == "puff" || FLAGS_operation == "puffhuff", -1);
     size_t stream_size;
     TEST_AND_RETURN_VALUE(src_stream->GetSize(&stream_size), -1);
     if (FLAGS_src_file_type == "deflate") {
@@ -165,11 +169,8 @@ int main(int argc, char** argv) {
   // Return the stream to its zero offset in case we used it.
   TEST_AND_RETURN_VALUE(src_stream->Seek(0), -1);
 
-  vector<ByteExtent> puffs;
-  if (FLAGS_operation == "puff") {
+  if (FLAGS_operation == "puff" || FLAGS_operation == "puffhuff") {
     auto puffer = std::make_shared<Puffer>();
-    auto dst_stream = FileStream::Open(FLAGS_dst_file, false, true);
-    TEST_AND_RETURN_VALUE(dst_stream, -1);
     if (src_deflates_bit.empty() && src_deflates_byte.empty()) {
       LOG(WARNING) << "You should pass source deflates, is this intentional?";
     }
@@ -183,20 +184,51 @@ int main(int argc, char** argv) {
     TEST_AND_RETURN_VALUE(FindPuffLocations(src_stream, src_deflates_bit,
                                             &dst_puffs, &dst_puff_size),
                           -1);
-    // Puff using the given puff_size.
+
+    auto dst_stream = FileStream::Open(FLAGS_dst_file, false, true);
+    TEST_AND_RETURN_VALUE(dst_stream, -1);
+
     auto reader =
         PuffinStream::CreateForPuff(std::move(src_stream), puffer,
                                     dst_puff_size, src_deflates_bit, dst_puffs);
+
+    Buffer puff_buffer;
+    auto writer = FLAGS_operation == "puffhuff"
+                      ? MemoryStream::CreateForWrite(&puff_buffer)
+                      : std::move(dst_stream);
+
     Buffer buffer(1024 * 1024);
     size_t bytes_wrote = 0;
     while (bytes_wrote < dst_puff_size) {
       auto write_size = std::min(
           buffer.size(), static_cast<size_t>(dst_puff_size - bytes_wrote));
       TEST_AND_RETURN_VALUE(reader->Read(buffer.data(), write_size), -1);
-      TEST_AND_RETURN_VALUE(dst_stream->Write(buffer.data(), write_size), -1);
+      TEST_AND_RETURN_VALUE(writer->Write(buffer.data(), write_size), -1);
       bytes_wrote += write_size;
     }
 
+    // puffhuff operation puffs a stream and huffs it back to the target stream
+    // to make sure we can get to the original stream.
+    if (FLAGS_operation == "puffhuff") {
+      src_puffs = dst_puffs;
+      dst_deflates_byte = src_deflates_byte;
+      dst_deflates_bit = src_deflates_bit;
+
+      auto read_puff_stream = MemoryStream::CreateForRead(puff_buffer);
+      auto huffer = std::make_shared<Huffer>();
+      auto huff_writer = PuffinStream::CreateForHuff(
+          std::move(dst_stream), huffer, dst_puff_size, dst_deflates_bit,
+          src_puffs);
+
+      size_t bytes_read = 0;
+      while (bytes_read < dst_puff_size) {
+        auto read_size = std::min(buffer.size(), dst_puff_size - bytes_read);
+        TEST_AND_RETURN_VALUE(read_puff_stream->Read(buffer.data(), read_size),
+                              -1);
+        TEST_AND_RETURN_VALUE(huff_writer->Write(buffer.data(), read_size), -1);
+        bytes_read += read_size;
+      }
+    }
   } else if (FLAGS_operation == "huff") {
     if (dst_deflates_bit.empty() && src_puffs.empty()) {
       LOG(WARNING) << "You should pass source puffs and destination deflates"
