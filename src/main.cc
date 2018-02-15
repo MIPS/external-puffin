@@ -24,16 +24,18 @@
 #include "puffin/src/puffin_stream.h"
 #include "puffin/src/set_errors.h"
 
-using std::vector;
-using std::string;
 using puffin::BitExtent;
+using puffin::Buffer;
 using puffin::ByteExtent;
-using puffin::ExtentStream;
 using puffin::Error;
+using puffin::ExtentStream;
 using puffin::FileStream;
 using puffin::Huffer;
 using puffin::Puffer;
+using puffin::PuffinStream;
 using puffin::UniqueStreamPtr;
+using std::string;
+using std::vector;
 
 namespace {
 
@@ -143,13 +145,13 @@ int main(int argc, char** argv) {
                                 src_stream, zlibs, &src_deflates_bit),
                             -1);
     } else if (FLAGS_src_file_type == "gzip") {
-      puffin::Buffer src_data(stream_size);
+      Buffer src_data(stream_size);
       TEST_AND_RETURN_VALUE(src_stream->Read(src_data.data(), src_data.size()),
                             -1);
       TEST_AND_RETURN_VALUE(
           puffin::LocateDeflatesInGzip(src_data, &src_deflates_byte), -1);
     } else if (FLAGS_src_file_type == "zip") {
-      puffin::Buffer src_data(stream_size);
+      Buffer src_data(stream_size);
       TEST_AND_RETURN_VALUE(src_stream->Read(src_data.data(), src_data.size()),
                             -1);
       TEST_AND_RETURN_VALUE(
@@ -182,10 +184,10 @@ int main(int argc, char** argv) {
                                             &dst_puffs, &dst_puff_size),
                           -1);
     // Puff using the given puff_size.
-    auto reader = puffin::PuffinStream::CreateForPuff(
-        std::move(src_stream), puffer, dst_puff_size, src_deflates_bit,
-        dst_puffs);
-    puffin::Buffer buffer(1024 * 1024);
+    auto reader =
+        PuffinStream::CreateForPuff(std::move(src_stream), puffer,
+                                    dst_puff_size, src_deflates_bit, dst_puffs);
+    Buffer buffer(1024 * 1024);
     size_t bytes_wrote = 0;
     while (bytes_wrote < dst_puff_size) {
       auto write_size = std::min(
@@ -207,11 +209,11 @@ int main(int argc, char** argv) {
     TEST_AND_RETURN_VALUE(dst_file, -1);
 
     auto huffer = std::make_shared<Huffer>();
-    auto dst_stream = puffin::PuffinStream::CreateForHuff(
-        std::move(dst_file), huffer, src_stream_size, dst_deflates_bit,
-        src_puffs);
+    auto dst_stream = PuffinStream::CreateForHuff(std::move(dst_file), huffer,
+                                                  src_stream_size,
+                                                  dst_deflates_bit, src_puffs);
 
-    puffin::Buffer buffer(1024 * 1024);
+    Buffer buffer(1024 * 1024);
     size_t bytes_read = 0;
     while (bytes_read < src_stream_size) {
       auto read_size = std::min(buffer.size(), src_stream_size - bytes_read);
@@ -246,7 +248,7 @@ int main(int argc, char** argv) {
                             -1);
     }
 
-    puffin::Buffer puffdiff_delta;
+    Buffer puffdiff_delta;
     TEST_AND_RETURN_VALUE(
         puffin::PuffDiff(std::move(src_stream), std::move(dst_stream),
                          src_deflates_bit, dst_deflates_bit, "/tmp/patch.tmp",
@@ -265,7 +267,7 @@ int main(int argc, char** argv) {
     size_t patch_size;
     TEST_AND_RETURN_VALUE(patch_stream->GetSize(&patch_size), -1);
 
-    puffin::Buffer puffdiff_delta(patch_size);
+    Buffer puffdiff_delta(patch_size);
     TEST_AND_RETURN_VALUE(
         patch_stream->Read(puffdiff_delta.data(), puffdiff_delta.size()), -1);
     auto dst_stream = FileStream::Open(FLAGS_dst_file, false, true);
