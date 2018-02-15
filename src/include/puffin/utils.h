@@ -42,6 +42,11 @@ bool LocateDeflatesInZlibBlocks(const std::string& file_path,
                                 const std::vector<ByteExtent>& zlibs,
                                 std::vector<BitExtent>* deflates);
 
+// Searches for deflate locations in a gzip file. The results are
+// saved in |deflate_blocks|.
+bool LocateDeflatesInGzip(const Buffer& data,
+                          std::vector<ByteExtent>* deflate_blocks);
+
 // Search for the deflates in a zip archive, and put the result in
 // |deflate_blocks|.
 bool LocateDeflatesInZipArchive(const Buffer& data,

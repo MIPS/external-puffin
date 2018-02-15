@@ -143,7 +143,11 @@ int main(int argc, char** argv) {
                                 src_stream, zlibs, &src_deflates_bit),
                             -1);
     } else if (FLAGS_src_file_type == "gzip") {
-      // TODO(ahassani): Implement gzip format parsing
+      puffin::Buffer src_data(stream_size);
+      TEST_AND_RETURN_VALUE(src_stream->Read(src_data.data(), src_data.size()),
+                            -1);
+      TEST_AND_RETURN_VALUE(
+          puffin::LocateDeflatesInGzip(src_data, &src_deflates_byte), -1);
     } else if (FLAGS_src_file_type == "zip") {
       puffin::Buffer src_data(stream_size);
       TEST_AND_RETURN_VALUE(src_stream->Read(src_data.data(), src_data.size()),

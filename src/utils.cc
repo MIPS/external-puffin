@@ -176,6 +176,78 @@ bool LocateDeflatesInZlibBlocks(const string& file_path,
   return LocateDeflatesInZlibBlocks(src, zlibs, deflates);
 }
 
+// For more information about gzip format, refer to RFC 1952 located at:
+// https://www.ietf.org/rfc/rfc1952.txt
+bool LocateDeflatesInGzip(const Buffer& data,
+                          vector<ByteExtent>* deflate_blocks) {
+  size_t member_start = 0;
+  while (member_start < data.size()) {
+    // Each member entry has the following format
+    // 0      1     0x1F
+    // 1      1     0x8B
+    // 2      1     compression method (8 denotes deflate)
+    // 3      1     set of flags
+    // 4      4     modification time
+    // 8      1     extra flags
+    // 9      1     operating system
+    TEST_AND_RETURN_FALSE(member_start + 10 <= data.size());
+    TEST_AND_RETURN_FALSE(data[member_start + 0] == 0x1F);
+    TEST_AND_RETURN_FALSE(data[member_start + 1] == 0x8B);
+    TEST_AND_RETURN_FALSE(data[member_start + 2] == 8);
+
+    size_t offset = member_start + 10;
+    int flag = data[member_start + 3];
+    // Extra field
+    if (flag & 4) {
+      TEST_AND_RETURN_FALSE(offset + 2 <= data.size());
+      uint16_t extra_length = data[offset++];
+      extra_length |= static_cast<uint16_t>(data[offset++]) << 8;
+      TEST_AND_RETURN_FALSE(offset + extra_length <= data.size());
+      offset += extra_length;
+    }
+    // File name field
+    if (flag & 8) {
+      while (true) {
+        TEST_AND_RETURN_FALSE(offset + 1 <= data.size());
+        if (data[offset++] == 0) {
+          break;
+        }
+      }
+    }
+    // File comment field
+    if (flag & 16) {
+      while (true) {
+        TEST_AND_RETURN_FALSE(offset + 1 <= data.size());
+        if (data[offset++] == 0) {
+          break;
+        }
+      }
+    }
+    // CRC16 field
+    if (flag & 2) {
+      offset += 2;
+    }
+
+    size_t compressed_size, uncompressed_size;
+    TEST_AND_RETURN_FALSE(CalculateSizeOfDeflateBlock(
+        data, offset, &compressed_size, &uncompressed_size));
+    TEST_AND_RETURN_FALSE(offset + compressed_size <= data.size());
+    deflate_blocks->push_back(ByteExtent(offset, compressed_size));
+    offset += compressed_size;
+
+    // Ignore CRC32;
+    TEST_AND_RETURN_FALSE(offset + 8 <= data.size());
+    offset += 4;
+    uint32_t u_size = 0;
+    for (size_t i = 0; i < 4; i++) {
+      u_size |= static_cast<uint32_t>(data[offset++]) << (i * 8);
+    }
+    TEST_AND_RETURN_FALSE(uncompressed_size % (1 << 31) == u_size);
+    member_start = offset;
+  }
+  return true;
+}
+
 // For more information about the zip format, refer to
 // https://support.pkware.com/display/PKZIP/APPNOTE
 bool LocateDeflatesInZipArchive(const Buffer& data,
