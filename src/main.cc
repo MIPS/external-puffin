@@ -63,6 +63,97 @@ vector<T> StringToExtents(const string& str) {
 
 const size_t kDefaultPuffCacheSize = 50 * 1024 * 1024;  // 50 MB
 
+// An enum representing the type of compressed files.
+enum class FileType { kDeflate, kZlib, kGzip, kZip, kRaw, kUnknown };
+
+// Returns a file type based on the input string |file_type| (normally the final
+// extension of the file).
+FileType StringToFileType(const string& file_type) {
+  if (file_type == "raw") {
+    return FileType::kRaw;
+  }
+  if (file_type == "deflate") {
+    return FileType::kDeflate;
+  } else if (file_type == "zlib") {
+    return FileType::kZlib;
+  } else if (file_type == "gzip" || file_type == "gz" || file_type == "tgz") {
+    return FileType::kGzip;
+  } else if (file_type == "zip" || file_type == "apk" || file_type == "jar") {
+    return FileType::kZip;
+  }
+  return FileType::kUnknown;
+}
+
+// Finds the location of deflates in |stream|. If |file_type_to_override| is
+// non-empty, it infers the file type based on that, otherwise, it infers the
+// file type based on the final extension of |file_name|. It returns false if
+// file type cannot be inferred from any of the input arguments. |deflates|
+// is filled with byte-aligned location of deflates.
+bool LocateDeflatesBasedOnFileType(const UniqueStreamPtr& stream,
+                                   const string& file_name,
+                                   const string& file_type_to_override,
+                                   vector<ByteExtent>* deflates) {
+  auto file_type = FileType::kUnknown;
+
+  auto last_dot = file_name.find_last_of(".");
+  if (last_dot == string::npos) {
+    // Could not find a dot so we assume there is no extension.
+    return false;
+  }
+  auto extension = file_name.substr(last_dot + 1);
+  file_type = StringToFileType(extension);
+
+  if (!file_type_to_override.empty()) {
+    auto override_file_type = StringToFileType(file_type_to_override);
+    if (override_file_type == FileType::kUnknown) {
+      LOG(ERROR) << "Overriden file type " << file_type_to_override
+                 << " does not exist.";
+      return false;
+    }
+    if (file_type != FileType::kUnknown && file_type != override_file_type) {
+      LOG(WARNING) << "Based on the file name, the file type is " << extension
+                   << ", But the overriden file type is "
+                   << file_type_to_override << ". Is this intentional?";
+    }
+    file_type = override_file_type;
+  }
+
+  if (file_type == FileType::kRaw) {
+    // Do not need to populate |deflates|.
+    return true;
+  }
+
+  size_t stream_size;
+  TEST_AND_RETURN_FALSE(stream->GetSize(&stream_size));
+  if (file_type == FileType::kDeflate) {
+    // Assume the whole stream is a deflate block.
+    *deflates = {ByteExtent(0, stream_size)};
+    return true;
+  }
+
+  Buffer data(stream_size);
+  TEST_AND_RETURN_FALSE(stream->Read(data.data(), data.size()));
+  switch (file_type) {
+    case FileType::kZlib:
+      TEST_AND_RETURN_FALSE(puffin::LocateDeflatesInZlib(data, deflates));
+      break;
+    case FileType::kGzip:
+      TEST_AND_RETURN_FALSE(puffin::LocateDeflatesInGzip(data, deflates));
+      break;
+    case FileType::kZip:
+      TEST_AND_RETURN_FALSE(puffin::LocateDeflatesInZipArchive(data, deflates));
+      break;
+    default:
+      LOG(ERROR) << "Unknown file type: (" << file_type_to_override << ") nor ("
+                 << extension << ").";
+      return false;
+  }
+  // Return the stream to its zero offset in case we used it.
+  TEST_AND_RETURN_FALSE(stream->Seek(0));
+
+  return true;
+}
+
 }  // namespace
 
 #define SETUP_FLAGS                                                        \
@@ -95,6 +186,8 @@ const size_t kDefaultPuffCacheSize = 50 * 1024 * 1024;  // 50 MB
   DEFINE_string(src_file_type, "",                                         \
                 "Type of the input source file: deflate, gzip, "           \
                 "zlib or zip");                                            \
+  DEFINE_string(dst_file_type, "",                                         \
+                "Same as src_file_type but for the target file");          \
   DEFINE_bool(verbose, false,                                              \
               "Logs all the given parameters including internally "        \
               "generated ones");                                           \
@@ -136,42 +229,12 @@ int main(int argc, char** argv) {
     TEST_AND_RETURN_VALUE(src_stream, -1);
   }
 
-  if (!FLAGS_src_file_type.empty()) {
-    TEST_AND_RETURN_VALUE(
-        FLAGS_operation == "puff" || FLAGS_operation == "puffhuff", -1);
-    size_t stream_size;
-    TEST_AND_RETURN_VALUE(src_stream->GetSize(&stream_size), -1);
-    if (FLAGS_src_file_type == "deflate") {
-      src_deflates_byte = {ByteExtent(0, stream_size)};
-    } else if (FLAGS_src_file_type == "zlib") {
-      Buffer src_data(stream_size);
-      TEST_AND_RETURN_VALUE(src_stream->Read(src_data.data(), src_data.size()),
-                            -1);
-      TEST_AND_RETURN_VALUE(
-          puffin::LocateDeflatesInZlib(src_data, &src_deflates_byte), -1);
-    } else if (FLAGS_src_file_type == "gzip") {
-      Buffer src_data(stream_size);
-      TEST_AND_RETURN_VALUE(src_stream->Read(src_data.data(), src_data.size()),
-                            -1);
-      TEST_AND_RETURN_VALUE(
-          puffin::LocateDeflatesInGzip(src_data, &src_deflates_byte), -1);
-    } else if (FLAGS_src_file_type == "zip") {
-      Buffer src_data(stream_size);
-      TEST_AND_RETURN_VALUE(src_stream->Read(src_data.data(), src_data.size()),
-                            -1);
-      TEST_AND_RETURN_VALUE(
-          puffin::LocateDeflatesInZipArchive(src_data, &src_deflates_byte), -1);
-    } else {
-      LOG(ERROR) << "Unknown file type: " << FLAGS_src_file_type;
-      return -1;
-    }
-  }
-
-  // Return the stream to its zero offset in case we used it.
-  TEST_AND_RETURN_VALUE(src_stream->Seek(0), -1);
-
   if (FLAGS_operation == "puff" || FLAGS_operation == "puffhuff") {
-    auto puffer = std::make_shared<Puffer>();
+    TEST_AND_RETURN_VALUE(
+        LocateDeflatesBasedOnFileType(src_stream, FLAGS_src_file,
+                                      FLAGS_src_file_type, &src_deflates_byte),
+        -1);
+
     if (src_deflates_bit.empty() && src_deflates_byte.empty()) {
       LOG(WARNING) << "You should pass source deflates, is this intentional?";
     }
@@ -188,7 +251,7 @@ int main(int argc, char** argv) {
 
     auto dst_stream = FileStream::Open(FLAGS_dst_file, false, true);
     TEST_AND_RETURN_VALUE(dst_stream, -1);
-
+    auto puffer = std::make_shared<Puffer>();
     auto reader =
         PuffinStream::CreateForPuff(std::move(src_stream), puffer,
                                     dst_puff_size, src_deflates_bit, dst_puffs);
@@ -255,14 +318,24 @@ int main(int argc, char** argv) {
       bytes_read += read_size;
     }
   } else if (FLAGS_operation == "puffdiff") {
+    auto dst_stream = FileStream::Open(FLAGS_dst_file, true, false);
+    TEST_AND_RETURN_VALUE(dst_stream, -1);
+
+    TEST_AND_RETURN_VALUE(
+        LocateDeflatesBasedOnFileType(src_stream, FLAGS_src_file,
+                                      FLAGS_src_file_type, &src_deflates_byte),
+        -1);
+    TEST_AND_RETURN_VALUE(
+        LocateDeflatesBasedOnFileType(dst_stream, FLAGS_dst_file,
+                                      FLAGS_dst_file_type, &dst_deflates_byte),
+        -1);
+
     if (src_deflates_bit.empty() && src_deflates_byte.empty()) {
       LOG(WARNING) << "You should pass source deflates, is this intentional?";
     }
     if (dst_deflates_bit.empty() && dst_deflates_byte.empty()) {
       LOG(WARNING) << "You should pass target deflates, is this intentional?";
     }
-    auto dst_stream = FileStream::Open(FLAGS_dst_file, true, false);
-    TEST_AND_RETURN_VALUE(dst_stream, -1);
     if (!dst_extents.empty()) {
       dst_stream =
           ExtentStream::CreateForWrite(std::move(dst_stream), dst_extents);
