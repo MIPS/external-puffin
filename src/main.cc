@@ -144,10 +144,11 @@ int main(int argc, char** argv) {
     if (FLAGS_src_file_type == "deflate") {
       src_deflates_byte = {ByteExtent(0, stream_size)};
     } else if (FLAGS_src_file_type == "zlib") {
-      std::vector<ByteExtent> zlibs = {ByteExtent(0, stream_size)};
-      TEST_AND_RETURN_VALUE(puffin::LocateDeflatesInZlibBlocks(
-                                src_stream, zlibs, &src_deflates_bit),
+      Buffer src_data(stream_size);
+      TEST_AND_RETURN_VALUE(src_stream->Read(src_data.data(), src_data.size()),
                             -1);
+      TEST_AND_RETURN_VALUE(
+          puffin::LocateDeflatesInZlib(src_data, &src_deflates_byte), -1);
     } else if (FLAGS_src_file_type == "gzip") {
       Buffer src_data(stream_size);
       TEST_AND_RETURN_VALUE(src_stream->Read(src_data.data(), src_data.size()),

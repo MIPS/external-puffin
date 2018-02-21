@@ -29,14 +29,14 @@ PUFFIN_EXPORT std::string ExtentsToString(const T& extents) {
   return str;
 }
 
-// Locates deflate buffer locations for a set of zlib buffers |zlibs| in
-// |src|. It performs by removing header and footer bytes from the zlib stream.
-bool LocateDeflatesInZlibBlocks(const UniqueStreamPtr& src,
-                                const std::vector<ByteExtent>& zlibs,
-                                std::vector<BitExtent>* deflates);
+// Locates deflate locations for a zlib buffer |data|. It locates by removing
+// header and footer bytes from the zlib stream.
+bool LocateDeflatesInZlib(const Buffer& data,
+                          std::vector<ByteExtent>* deflate_blocks);
 
 // Similar to the function above, except that it accepts the file path to the
-// source.
+// source and a list of zlib blocks and returns the deflate addresses in bit
+// extents.
 PUFFIN_EXPORT
 bool LocateDeflatesInZlibBlocks(const std::string& file_path,
                                 const std::vector<ByteExtent>& zlibs,

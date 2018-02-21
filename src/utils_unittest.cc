@@ -2,10 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <unistd.h>
+
 #include <vector>
 
 #include "gtest/gtest.h"
 
+#include "puffin/src/file_stream.h"
 #include "puffin/src/include/puffin/common.h"
 #include "puffin/src/include/puffin/utils.h"
 #include "puffin/src/memory_stream.h"
@@ -13,6 +16,7 @@
 
 namespace puffin {
 
+using std::string;
 using std::vector;
 
 namespace {
@@ -73,12 +77,25 @@ const uint8_t kGzipEntryWithExtraField[] = {
     0x34, 0x32, 0x36, 0x31, 0x35, 0x33, 0xb7, 0xb0, 0xe4, 0x02, 0x00, 0xd1,
     0xe5, 0x76, 0x40, 0x0b, 0x00, 0x00, 0x00};
 
+// echo "0123456789" | zlib-flate -compress |
+// hexdump -v -e '12/1 "0x%02x, " "\n"'
+const uint8_t kZlibEntry[] = {
+    0x78, 0x9c, 0x33, 0x30, 0x34, 0x32, 0x36, 0x31, 0x35, 0x33, 0xb7, 0xb0,
+    0xe4, 0x02, 0x00, 0x0d, 0x17, 0x02, 0x18};
+
 void FindDeflatesInZlibBlocks(const Buffer& src,
                               const vector<ByteExtent>& zlibs,
                               const vector<BitExtent>& deflates) {
-  auto src_stream = MemoryStream::CreateForRead(src);
+  string tmp_file;
+  ASSERT_TRUE(MakeTempFile(&tmp_file, nullptr));
+  ScopedPathUnlinker unlinker(tmp_file);
+  auto src_stream = FileStream::Open(tmp_file, false, true);
+  ASSERT_TRUE(src_stream);
+  ASSERT_TRUE(src_stream->Write(src.data(), src.size()));
+  ASSERT_TRUE(src_stream->Close());
+
   vector<BitExtent> deflates_out;
-  ASSERT_TRUE(LocateDeflatesInZlibBlocks(src_stream, zlibs, &deflates_out));
+  ASSERT_TRUE(LocateDeflatesInZlibBlocks(tmp_file, zlibs, &deflates_out));
   ASSERT_EQ(deflates, deflates_out);
 }
 
@@ -95,15 +112,7 @@ void CheckFindPuffLocation(const Buffer& compressed,
 }
 }  // namespace
 
-TEST(UtilsTest, LocateDeflatesInZlibsTest) {
-  Buffer empty;
-  vector<ByteExtent> empty_zlibs;
-  vector<BitExtent> empty_deflates;
-  FindDeflatesInZlibBlocks(empty, empty_zlibs, empty_deflates);
-}
-
 // Test Simple Puffing of the source.
-
 TEST(UtilsTest, FindPuffLocations1Test) {
   CheckFindPuffLocation(kDeflates8, kSubblockDeflateExtents8, kPuffExtents8,
                         kPuffs8.size());
@@ -114,8 +123,36 @@ TEST(UtilsTest, FindPuffLocations2Test) {
                         kPuffs9.size());
 }
 
-// TODO(ahassani): Test a proper zlib format.
-// TODO(ahassani): Test zlib format with wrong header.
+TEST(UtilsTest, LocateDeflatesInZlib) {
+  Buffer zlib_data(kZlibEntry, std::end(kZlibEntry));
+  vector<ByteExtent> deflates;
+  EXPECT_TRUE(LocateDeflatesInZlib(zlib_data, &deflates));
+  EXPECT_EQ(static_cast<size_t>(1), deflates.size());
+  EXPECT_EQ(ByteExtent(2, 13), deflates[0]);
+}
+
+TEST(UtilsTest, LocateDeflatesInEmptyZlib) {
+  Buffer empty;
+  vector<ByteExtent> empty_zlibs;
+  vector<BitExtent> empty_deflates;
+  FindDeflatesInZlibBlocks(empty, empty_zlibs, empty_deflates);
+}
+
+TEST(UtilsTest, LocateDeflatesInZlibWithInvalidFields) {
+  Buffer zlib_data(kZlibEntry, std::end(kZlibEntry));
+  auto cmf = zlib_data[0];
+  auto flag = zlib_data[1];
+
+  vector<ByteExtent> deflates;
+  zlib_data[0] = cmf & 0xF0;
+  EXPECT_FALSE(LocateDeflatesInZlib(zlib_data, &deflates));
+  zlib_data[0] = cmf | (8 << 4);
+  EXPECT_FALSE(LocateDeflatesInZlib(zlib_data, &deflates));
+  zlib_data[0] = cmf;  // Correct it.
+
+  zlib_data[1] = flag & 0xF0;
+  EXPECT_FALSE(LocateDeflatesInZlib(zlib_data, &deflates));
+}
 
 TEST(UtilsTest, LocateDeflatesInZipArchiveSmoke) {
   Buffer zip_entries(kZipEntries, std::end(kZipEntries));
