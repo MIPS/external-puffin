@@ -334,7 +334,7 @@ bool PuffinStream::Write(const void* buffer, size_t length) {
   auto bytes = static_cast<const uint8_t*>(buffer);
   size_t bytes_wrote = 0;
   while (bytes_wrote < length) {
-    if (deflate_bit_pos_ < (cur_deflate_->offset & ~7u)) {
+    if (deflate_bit_pos_ < (cur_deflate_->offset & ~7ull)) {
       // Between two puffs or before the first puff. We know that we are
       // starting from the byte boundary because we have already processed the
       // non-deflate bits of the last byte of the last deflate. Here we don't
@@ -397,7 +397,7 @@ bool PuffinStream::Write(const void* buffer, size_t length) {
         if (extra_byte_ == 1) {
           deflate_buffer_->data()[bytes_to_write - 1] |=
               puff_buffer_->data()[cur_puff_->length] << (deflate_bit_pos_ & 7);
-          deflate_bit_pos_ = (deflate_bit_pos_ + 7) & ~7u;
+          deflate_bit_pos_ = (deflate_bit_pos_ + 7) & ~7ull;
         } else if ((deflate_bit_pos_ & 7) != 0) {
           // This happens if current and next deflate finish and end on the same
           // byte, then we cannot write into output until we have huffed the
@@ -436,7 +436,7 @@ bool PuffinStream::SetExtraByte() {
     return true;
   }
   size_t end_bit = cur_deflate_->offset + cur_deflate_->length;
-  if ((end_bit & 7) && ((end_bit + 7) & ~7u) <= (cur_deflate_ + 1)->offset) {
+  if ((end_bit & 7) && ((end_bit + 7) & ~7ull) <= (cur_deflate_ + 1)->offset) {
     extra_byte_ = 1;
   } else {
     extra_byte_ = 0;
