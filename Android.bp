@@ -98,6 +98,7 @@ cc_test {
         "src/sample_generator.cc",
         "src/stream_unittest.cc",
         "src/testrunner.cc",
+        "src/unittest_common.cc",
         "src/utils_unittest.cc",
     ],
     shared_libs: [

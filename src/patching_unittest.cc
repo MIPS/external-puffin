@@ -30,7 +30,8 @@ void TestPatching(const Buffer& src_buf,
                   const vector<BitExtent>& dst_deflates,
                   const Buffer patch) {
   Buffer patch_out;
-  string patch_path = "/tmp/patch.tmp";
+  string patch_path;
+  ASSERT_TRUE(MakeTempFile(&patch_path, nullptr));
   ScopedPathUnlinker scoped_unlinker(patch_path);
   ASSERT_TRUE(PuffDiff(src_buf, dst_buf, src_deflates, dst_deflates, patch_path,
                        &patch_out));

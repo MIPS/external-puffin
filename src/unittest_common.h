@@ -29,6 +29,11 @@ class ScopedPathUnlinker {
   DISALLOW_COPY_AND_ASSIGN(ScopedPathUnlinker);
 };
 
+// Makes a temporary file as /tmp/puffin-XXXXXX. Both |filename| and |fd| are
+// optional, but if given, they will be populated with the new temporary file's
+// values.
+bool MakeTempFile(std::string* filename, int* fd);
+
 // clang-format off
 // Uncompressed deflate block.
 const Buffer kRaw1 = {0x01, 0x02, 0x03, 0x04, 0x05};

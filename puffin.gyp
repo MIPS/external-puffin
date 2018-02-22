@@ -171,6 +171,7 @@
             'src/puff_io_unittest.cc',
             'src/puffin_unittest.cc',
             'src/stream_unittest.cc',
+            'src/unittest_common.cc',
             'src/utils_unittest.cc',
           ],
         },
