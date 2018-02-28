@@ -65,13 +65,6 @@ bool HuffmanTable::InitHuffmanCodes(const Buffer& lens, size_t* max_bits) {
     }
   }
 
-  // No codes found! However, This is not invalid because you can have no
-  // length/distance codes in a block (all literals).
-  if (lens.size() == len_count_[0]) {
-    LOG(WARNING)
-        << "No non-zero lengths are given in the Huffman code Length array.";
-  }
-
   // Check for oversubscribed code lengths. (A code with length 'L' cannot have
   // more than 2^L items.
   for (size_t idx = 1; idx <= *max_bits; idx++) {
