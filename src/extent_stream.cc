@@ -34,7 +34,7 @@ ExtentStream::ExtentStream(UniqueStreamPtr stream,
   extents_upper_bounds_.reserve(extents_.size() + 1);
   extents_upper_bounds_.emplace_back(0);
   uint64_t total_size = 0;
-  size_t extent_end = 0;
+  uint64_t extent_end = 0;
   for (const auto& extent : extents_) {
     total_size += extent.length;
     extents_upper_bounds_.emplace_back(total_size);
@@ -49,17 +49,17 @@ ExtentStream::ExtentStream(UniqueStreamPtr stream,
   cur_extent_ = extents_.begin();
 }
 
-bool ExtentStream::GetSize(size_t* size) const {
+bool ExtentStream::GetSize(uint64_t* size) const {
   *size = size_;
   return true;
 }
 
-bool ExtentStream::GetOffset(size_t* offset) const {
+bool ExtentStream::GetOffset(uint64_t* offset) const {
   *offset = offset_;
   return true;
 }
 
-bool ExtentStream::Seek(size_t offset) {
+bool ExtentStream::Seek(uint64_t offset) {
   TEST_AND_RETURN_FALSE(offset <= size_);
 
   // The first item is zero and upper_bound never returns it because it always

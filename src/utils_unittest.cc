@@ -102,10 +102,10 @@ void FindDeflatesInZlibBlocks(const Buffer& src,
 void CheckFindPuffLocation(const Buffer& compressed,
                            const vector<BitExtent>& deflates,
                            const vector<ByteExtent>& expected_puffs,
-                           size_t expected_puff_size) {
+                           uint64_t expected_puff_size) {
   auto src = MemoryStream::CreateForRead(compressed);
   vector<ByteExtent> puffs;
-  size_t puff_size;
+  uint64_t puff_size;
   ASSERT_TRUE(FindPuffLocations(src, deflates, &puffs, &puff_size));
   EXPECT_EQ(puffs, expected_puffs);
   EXPECT_EQ(puff_size, expected_puff_size);

@@ -15,7 +15,7 @@ namespace puffin {
 
 // Counts the number of bytes in a list of |ByteExtent|s.
 PUFFIN_EXPORT
-size_t BytesInByteExtents(const std::vector<ByteExtent>& extents);
+uint64_t BytesInByteExtents(const std::vector<ByteExtent>& extents);
 
 // Converts an array of |ByteExtens| or |BitExtents| to a string. Each extent
 // has format "offset:length" and are comma separated.
@@ -72,7 +72,7 @@ bool FindDeflateSubBlocks(const UniqueStreamPtr& src,
 bool FindPuffLocations(const UniqueStreamPtr& src,
                        const std::vector<BitExtent>& deflates,
                        std::vector<ByteExtent>* puffs,
-                       size_t* out_puff_size);
+                       uint64_t* out_puff_size);
 
 }  // namespace puffin
 

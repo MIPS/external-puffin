@@ -34,7 +34,7 @@ UniqueStreamPtr FileStream::Open(const string& path, bool read, bool write) {
   return UniqueStreamPtr(new FileStream(fd));
 }
 
-bool FileStream::GetSize(size_t* size) const {
+bool FileStream::GetSize(uint64_t* size) const {
   auto cur_off = lseek(fd_, 0, SEEK_CUR);
   TEST_AND_RETURN_FALSE(cur_off >= 0);
   auto fsize = lseek(fd_, 0, SEEK_END);
@@ -45,14 +45,14 @@ bool FileStream::GetSize(size_t* size) const {
   return true;
 }
 
-bool FileStream::GetOffset(size_t* offset) const {
+bool FileStream::GetOffset(uint64_t* offset) const {
   auto off = lseek(fd_, 0, SEEK_CUR);
   TEST_AND_RETURN_FALSE(off >= 0);
   *offset = off;
   return true;
 }
 
-bool FileStream::Seek(size_t offset) {
+bool FileStream::Seek(uint64_t offset) {
   auto off = lseek(fd_, offset, SEEK_SET);
   TEST_AND_RETURN_FALSE(off == static_cast<off_t>(offset));
   return true;

@@ -45,7 +45,7 @@ class PuffinStream : public StreamInterface {
   //                      and no puff will be cached.
   static UniqueStreamPtr CreateForPuff(UniqueStreamPtr stream,
                                        std::shared_ptr<Puffer> puffer,
-                                       size_t puff_size,
+                                       uint64_t puff_size,
                                        const std::vector<BitExtent>& deflates,
                                        const std::vector<ByteExtent>& puffs,
                                        size_t max_cache_size = 0);
@@ -59,17 +59,17 @@ class PuffinStream : public StreamInterface {
   // |puffs|     IN  The location of puffs into the input puff stream.
   static UniqueStreamPtr CreateForHuff(UniqueStreamPtr stream,
                                        std::shared_ptr<Huffer> huffer,
-                                       size_t puff_size,
+                                       uint64_t puff_size,
                                        const std::vector<BitExtent>& deflates,
                                        const std::vector<ByteExtent>& puffs);
 
-  bool GetSize(size_t* size) const override;
+  bool GetSize(uint64_t* size) const override;
 
   // Returns the current offset in the imaginary puff stream.
-  bool GetOffset(size_t* offset) const override;
+  bool GetOffset(uint64_t* offset) const override;
 
   // Sets the current offset in the imaginary puff stream.
-  bool Seek(size_t offset) override;
+  bool Seek(uint64_t offset) override;
 
   // Reads from the deflate stream |stream_| and writes the puff stream into
   // |buffer|.
@@ -90,7 +90,7 @@ class PuffinStream : public StreamInterface {
   PuffinStream(UniqueStreamPtr stream,
                std::shared_ptr<Puffer> puffer,
                std::shared_ptr<Huffer> huffer,
-               size_t puff_size,
+               uint64_t puff_size,
                const std::vector<BitExtent>& deflates,
                const std::vector<ByteExtent>& puffs,
                size_t max_cache_size);
@@ -102,7 +102,7 @@ class PuffinStream : public StreamInterface {
   // Returns the cache for the |puff_id|th puff. If it does not find it, either
   // returns the least accessed cached (if cache is full) or creates a new empty
   // buffer. It returns false if it cannot find the |puff_id|th puff cache.
-  bool GetPuffCache(int puff_id, size_t puff_size, SharedBufferPtr* buffer);
+  bool GetPuffCache(int puff_id, uint64_t puff_size, SharedBufferPtr* buffer);
 
   UniqueStreamPtr stream_;
 
@@ -110,7 +110,7 @@ class PuffinStream : public StreamInterface {
   std::shared_ptr<Huffer> huffer_;
 
   // The size of the imaginary puff stream.
-  size_t puff_stream_size_;
+  uint64_t puff_stream_size_;
 
   std::vector<BitExtent> deflates_;
   // The current deflate is being processed.
@@ -120,15 +120,15 @@ class PuffinStream : public StreamInterface {
   // The current puff is being processed.
   std::vector<ByteExtent>::iterator cur_puff_;
 
-  std::vector<size_t> upper_bounds_;
+  std::vector<uint64_t> upper_bounds_;
 
   // The current offset in the imaginary puff stream is |puff_pos_| +
   // |skip_bytes_|
-  size_t puff_pos_;
-  size_t skip_bytes_;
+  uint64_t puff_pos_;
+  uint64_t skip_bytes_;
 
   // The current bit offset in |stream_|.
-  size_t deflate_bit_pos_;
+  uint64_t deflate_bit_pos_;
 
   // This value caches the first or last byte of a deflate stream. This is
   // needed when two deflate stream end on the same byte (with greater than zero
@@ -158,7 +158,7 @@ class PuffinStream : public StreamInterface {
   // this class.
   size_t max_cache_size_;
   // The current amount of memory (in bytes) used for caching puff buffers.
-  size_t cur_cache_size_;
+  uint64_t cur_cache_size_;
 
   DISALLOW_COPY_AND_ASSIGN(PuffinStream);
 };

@@ -35,7 +35,7 @@ class StreamTest : public ::testing::Test {
 
     // No reading out of data boundary.
     Buffer tmp(100);
-    size_t size;
+    uint64_t size;
     ASSERT_TRUE(stream->GetSize(&size));
     ASSERT_TRUE(stream->Seek(size));
     ASSERT_TRUE(stream->Read(tmp.data(), 0));
@@ -76,8 +76,8 @@ class StreamTest : public ::testing::Test {
     for (size_t idx = 0; idx < 10000; idx++) {
       // zero to full size available.
       size_t size = rand_r(&rand_seed) % (buf.size() + 1);
-      size_t max_start = buf.size() - size;
-      size_t start = rand_r(&rand_seed) % (max_start + 1);
+      uint64_t max_start = buf.size() - size;
+      uint64_t start = rand_r(&rand_seed) % (max_start + 1);
       ASSERT_TRUE(stream->Seek(start));
       ASSERT_TRUE(stream->Read(tmp.data(), size));
       for (size_t idx = 0; idx < size; idx++) {
@@ -89,7 +89,7 @@ class StreamTest : public ::testing::Test {
   void TestWriteBoundary(StreamInterface* stream) {
     Buffer buf(10);
     // Writing out of boundary is fine.
-    size_t size;
+    uint64_t size;
     ASSERT_TRUE(stream->GetSize(&size));
     ASSERT_TRUE(stream->Seek(size));
     ASSERT_TRUE(stream->Write(buf.data(), 0));
@@ -111,7 +111,7 @@ class StreamTest : public ::testing::Test {
   }
 
   void TestWrite(StreamInterface* write_stream, StreamInterface* read_stream) {
-    size_t size;
+    uint64_t size;
     ASSERT_TRUE(read_stream->GetSize(&size));
     Buffer buf1(size);
     Buffer buf2(size);
@@ -139,7 +139,7 @@ class StreamTest : public ::testing::Test {
 
   // Call this at the end before |TestClose|.
   void TestSeek(StreamInterface* stream, bool seek_end_is_fine) {
-    size_t size, offset;
+    uint64_t size, offset;
     ASSERT_TRUE(stream->GetSize(&size));
     ASSERT_TRUE(stream->Seek(size));
     ASSERT_TRUE(stream->GetOffset(&offset));

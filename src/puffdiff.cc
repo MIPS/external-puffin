@@ -52,8 +52,8 @@ bool CreatePatch(const Buffer& bsdiff_patch,
                  const vector<BitExtent>& dst_deflates,
                  const vector<ByteExtent>& src_puffs,
                  const vector<ByteExtent>& dst_puffs,
-                 size_t src_puff_size,
-                 size_t dst_puff_size,
+                 uint64_t src_puff_size,
+                 uint64_t dst_puff_size,
                  Buffer* patch) {
   metadata::PatchHeader header;
   header.set_version(1);
@@ -68,7 +68,7 @@ bool CreatePatch(const Buffer& bsdiff_patch,
 
   const uint32_t header_size = header.ByteSize();
 
-  size_t offset = 0;
+  uint64_t offset = 0;
   patch->resize(kMagicLength + sizeof(header_size) + header_size +
                 bsdiff_patch.size());
 
@@ -104,7 +104,7 @@ bool PuffDiff(UniqueStreamPtr src,
   auto puff_deflate_stream =
       [&puffer](UniqueStreamPtr stream, const vector<BitExtent>& deflates,
                 Buffer* puff_buffer, vector<ByteExtent>* puffs) {
-        size_t puff_size;
+        uint64_t puff_size;
         TEST_AND_RETURN_FALSE(stream->Seek(0));
         TEST_AND_RETURN_FALSE(
             FindPuffLocations(stream, deflates, puffs, &puff_size));
@@ -132,7 +132,7 @@ bool PuffDiff(UniqueStreamPtr src,
 
   auto bsdiff_patch = FileStream::Open(tmp_filepath, true, false);
   TEST_AND_RETURN_FALSE(bsdiff_patch);
-  size_t patch_size;
+  uint64_t patch_size;
   TEST_AND_RETURN_FALSE(bsdiff_patch->GetSize(&patch_size));
   Buffer bsdiff_patch_buf(patch_size);
   TEST_AND_RETURN_FALSE(

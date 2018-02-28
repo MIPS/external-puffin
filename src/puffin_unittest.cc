@@ -199,7 +199,7 @@ class PuffinTest : public ::testing::Test {
     auto deflate_stream = MemoryStream::CreateForRead(deflate_buffer);
     ASSERT_TRUE(deflate_stream->Seek(0));
     vector<ByteExtent> out_puff_extents;
-    size_t puff_size;
+    uint64_t puff_size;
     ASSERT_TRUE(FindPuffLocations(deflate_stream, deflate_extents,
                                   &out_puff_extents, &puff_size));
     EXPECT_EQ(puff_size, puff_buffer.size());

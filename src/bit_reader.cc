@@ -64,7 +64,7 @@ size_t BufferBitReader::Offset() const {
   return index_ - in_cache_bits_ / 8;
 }
 
-size_t BufferBitReader::OffsetInBits() const {
+uint64_t BufferBitReader::OffsetInBits() const {
   return (index_ * 8) - in_cache_bits_;
 }
 

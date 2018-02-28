@@ -18,15 +18,15 @@ class StreamInterface {
   virtual ~StreamInterface() = default;
 
   // Returns the size of the stream.
-  virtual bool GetSize(size_t* size) const = 0;
+  virtual bool GetSize(uint64_t* size) const = 0;
 
   // Returns the current offset in the stream where next read or write will
   // happen.
-  virtual bool GetOffset(size_t* offset) const = 0;
+  virtual bool GetOffset(uint64_t* offset) const = 0;
 
   // Sets the offset in the stream for the next read or write. On error
   // returns |false|.
-  virtual bool Seek(size_t offset) = 0;
+  virtual bool Seek(uint64_t offset) = 0;
 
   // Reads |length| bytes of data into |buffer|. On error, returns |false|.
   virtual bool Read(void* buffer, size_t length) = 0;

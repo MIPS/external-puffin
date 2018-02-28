@@ -28,7 +28,7 @@ using std::shared_ptr;
 
 namespace {
 
-bool CheckArgsIntegrity(size_t puff_size,
+bool CheckArgsIntegrity(uint64_t puff_size,
                         const std::vector<BitExtent>& deflates,
                         const std::vector<ByteExtent>& puffs) {
   TEST_AND_RETURN_FALSE(puffs.size() == deflates.size());
@@ -57,7 +57,7 @@ bool CheckArgsIntegrity(size_t puff_size,
 UniqueStreamPtr PuffinStream::CreateForPuff(
     UniqueStreamPtr stream,
     std::shared_ptr<Puffer> puffer,
-    size_t puff_size,
+    uint64_t puff_size,
     const std::vector<BitExtent>& deflates,
     const std::vector<ByteExtent>& puffs,
     size_t max_cache_size) {
@@ -75,7 +75,7 @@ UniqueStreamPtr PuffinStream::CreateForPuff(
 UniqueStreamPtr PuffinStream::CreateForHuff(
     UniqueStreamPtr stream,
     std::shared_ptr<Huffer> huffer,
-    size_t puff_size,
+    uint64_t puff_size,
     const std::vector<BitExtent>& deflates,
     const std::vector<ByteExtent>& puffs) {
   TEST_AND_RETURN_VALUE(CheckArgsIntegrity(puff_size, deflates, puffs),
@@ -91,7 +91,7 @@ UniqueStreamPtr PuffinStream::CreateForHuff(
 PuffinStream::PuffinStream(UniqueStreamPtr stream,
                            shared_ptr<Puffer> puffer,
                            shared_ptr<Huffer> huffer,
-                           size_t puff_size,
+                           uint64_t puff_size,
                            const vector<BitExtent>& deflates,
                            const vector<ByteExtent>& puffs,
                            size_t max_cache_size)
@@ -120,7 +120,7 @@ PuffinStream::PuffinStream(UniqueStreamPtr stream,
   // We can pass the size of the deflate stream too, but it is not necessary
   // yet. We cannot get the size of stream from itself, because we might be
   // writing into it and its size is not defined yet.
-  size_t deflate_stream_size = puff_stream_size_;
+  uint64_t deflate_stream_size = puff_stream_size_;
   if (!puffs.empty()) {
     deflate_stream_size =
         ((deflates.back().offset + deflates.back().length) / 8) +
@@ -131,35 +131,33 @@ PuffinStream::PuffinStream(UniqueStreamPtr stream,
   puffs_.emplace_back(puff_stream_size_, 0);
 
   // Look for the largest puff and deflate extents and get proper size buffers.
-  size_t max_puff_length = 0;
+  uint64_t max_puff_length = 0;
   for (const auto& puff : puffs) {
-    max_puff_length =
-        std::max(max_puff_length, static_cast<size_t>(puff.length));
+    max_puff_length = std::max(max_puff_length, puff.length);
   }
   puff_buffer_.reset(new Buffer(max_puff_length + 1));
   if (max_cache_size_ < max_puff_length) {
     max_cache_size_ = 0;  // It means we are not caching puffs.
   }
 
-  size_t max_deflate_length = 0;
+  uint64_t max_deflate_length = 0;
   for (const auto& deflate : deflates) {
-    max_deflate_length =
-        std::max(max_deflate_length, static_cast<size_t>(deflate.length * 8));
+    max_deflate_length = std::max(max_deflate_length, deflate.length * 8);
   }
   deflate_buffer_.reset(new Buffer(max_deflate_length + 2));
 }
 
-bool PuffinStream::GetSize(size_t* size) const {
+bool PuffinStream::GetSize(uint64_t* size) const {
   *size = puff_stream_size_;
   return true;
 }
 
-bool PuffinStream::GetOffset(size_t* offset) const {
+bool PuffinStream::GetOffset(uint64_t* offset) const {
   *offset = puff_pos_ + skip_bytes_;
   return true;
 }
 
-bool PuffinStream::Seek(size_t offset) {
+bool PuffinStream::Seek(uint64_t offset) {
   TEST_AND_RETURN_FALSE(!closed_);
   if (!is_for_puff_) {
     // For huffing we should not seek, only seek to zero is accepted.
@@ -206,22 +204,23 @@ bool PuffinStream::Close() {
   return stream_->Close();
 }
 
-bool PuffinStream::Read(void* buffer, size_t length) {
+bool PuffinStream::Read(void* buffer, size_t count) {
   TEST_AND_RETURN_FALSE(!closed_);
   TEST_AND_RETURN_FALSE(is_for_puff_);
   if (cur_puff_ == puffs_.end()) {
-    TEST_AND_RETURN_FALSE(length == 0);
+    TEST_AND_RETURN_FALSE(count == 0);
   }
   auto bytes = static_cast<uint8_t*>(buffer);
-  size_t bytes_read = 0;
+  uint64_t length = count;
+  uint64_t bytes_read = 0;
   while (bytes_read < length) {
     if (puff_pos_ < cur_puff_->offset) {
       // Reading between two deflates. We also read bytes that have at least one
       // bit of a deflate bit stream. The byte which has both deflate and raw
       // data will be shifted or masked off the deflate bits and the remaining
       // value will be saved in the puff stream as an byte integer.
-      size_t start_byte = (deflate_bit_pos_ / 8);
-      size_t end_byte = (cur_deflate_->offset + 7) / 8;
+      uint64_t start_byte = (deflate_bit_pos_ / 8);
+      uint64_t end_byte = (cur_deflate_->offset + 7) / 8;
       auto bytes_to_read = std::min(length - bytes_read, end_byte - start_byte);
       TEST_AND_RETURN_FALSE(bytes_to_read >= 1);
 
@@ -300,8 +299,7 @@ bool PuffinStream::Read(void* buffer, size_t length) {
       }
       // Copy from puff buffer to output if needed.
       auto bytes_to_copy =
-          std::min(length - bytes_read,
-                   static_cast<size_t>(cur_puff_->length) - skip_bytes_);
+          std::min(length - bytes_read, cur_puff_->length - skip_bytes_);
       if (!puff_directly_into_buffer) {
         memcpy(bytes + bytes_read, puff_buffer_->data() + skip_bytes_,
                bytes_to_copy);
@@ -328,11 +326,12 @@ bool PuffinStream::Read(void* buffer, size_t length) {
   return true;
 }
 
-bool PuffinStream::Write(const void* buffer, size_t length) {
+bool PuffinStream::Write(const void* buffer, size_t count) {
   TEST_AND_RETURN_FALSE(!closed_);
   TEST_AND_RETURN_FALSE(!is_for_puff_);
   auto bytes = static_cast<const uint8_t*>(buffer);
-  size_t bytes_wrote = 0;
+  uint64_t length = count;
+  uint64_t bytes_wrote = 0;
   while (bytes_wrote < length) {
     if (deflate_bit_pos_ < (cur_deflate_->offset & ~7ull)) {
       // Between two puffs or before the first puff. We know that we are
@@ -340,9 +339,9 @@ bool PuffinStream::Write(const void* buffer, size_t length) {
       // non-deflate bits of the last byte of the last deflate. Here we don't
       // process any byte that has deflate bit.
       TEST_AND_RETURN_FALSE((deflate_bit_pos_ & 7) == 0);
-      auto copy_len = std::min((static_cast<size_t>(cur_deflate_->offset) / 8) -
-                                   (deflate_bit_pos_ / 8),
-                               length - bytes_wrote);
+      auto copy_len =
+          std::min((cur_deflate_->offset / 8) - (deflate_bit_pos_ / 8),
+                   length - bytes_wrote);
       TEST_AND_RETURN_FALSE(stream_->Write(bytes + bytes_wrote, copy_len));
       bytes_wrote += copy_len;
       puff_pos_ += copy_len;
@@ -364,9 +363,8 @@ bool PuffinStream::Write(const void* buffer, size_t length) {
         TEST_AND_RETURN_FALSE(puff_pos_ == cur_puff_->offset);
       }
 
-      auto copy_len = std::min(
-          length - bytes_wrote,
-          static_cast<size_t>(cur_puff_->length) + extra_byte_ - skip_bytes_);
+      auto copy_len = std::min(length - bytes_wrote,
+                               cur_puff_->length + extra_byte_ - skip_bytes_);
       TEST_AND_RETURN_FALSE(puff_buffer_->size() >= skip_bytes_ + copy_len);
       memcpy(puff_buffer_->data() + skip_bytes_, bytes + bytes_wrote, copy_len);
       skip_bytes_ += copy_len;
@@ -435,7 +433,7 @@ bool PuffinStream::SetExtraByte() {
     extra_byte_ = 0;
     return true;
   }
-  size_t end_bit = cur_deflate_->offset + cur_deflate_->length;
+  uint64_t end_bit = cur_deflate_->offset + cur_deflate_->length;
   if ((end_bit & 7) && ((end_bit + 7) & ~7ull) <= (cur_deflate_ + 1)->offset) {
     extra_byte_ = 1;
   } else {
@@ -445,7 +443,7 @@ bool PuffinStream::SetExtraByte() {
 }
 
 bool PuffinStream::GetPuffCache(int puff_id,
-                                size_t puff_size,
+                                uint64_t puff_size,
                                 SharedBufferPtr* buffer) {
   bool found = false;
   // Search for it.
@@ -477,7 +475,7 @@ bool PuffinStream::GetPuffCache(int puff_id,
     }
     cache.second->resize(puff_size);
 
-    constexpr size_t kMaxSizeDifference = 20 * 1024;
+    constexpr uint64_t kMaxSizeDifference = 20 * 1024;
     if (puff_size + kMaxSizeDifference < cache.second->capacity()) {
       cache.second->shrink_to_fit();
     }

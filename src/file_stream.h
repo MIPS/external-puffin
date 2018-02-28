@@ -21,9 +21,9 @@ class FileStream : public StreamInterface {
 
   static UniqueStreamPtr Open(const std::string& path, bool read, bool write);
 
-  bool GetSize(size_t* size) const override;
-  bool GetOffset(size_t* offset) const override;
-  bool Seek(size_t offset) override;
+  bool GetSize(uint64_t* size) const override;
+  bool GetOffset(uint64_t* offset) const override;
+  bool Seek(uint64_t offset) override;
   bool Read(void* buffer, size_t length) override;
   bool Write(const void* buffer, size_t length) override;
   bool Close() override;

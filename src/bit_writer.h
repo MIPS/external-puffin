@@ -88,10 +88,10 @@ class BufferBitWriter : public BitWriterInterface {
   uint8_t* out_buf_;
 
   // The number of bytes in |out_buf_|.
-  size_t out_size_;
+  uint64_t out_size_;
 
   // The index to the next byte to write into.
-  size_t index_;
+  uint64_t index_;
 
   // A temporary buffer to keep the bits going out.
   uint32_t out_holder_;

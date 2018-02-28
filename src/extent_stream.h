@@ -26,9 +26,9 @@ class ExtentStream : public StreamInterface {
                                        const std::vector<ByteExtent>& extents);
   ~ExtentStream() override = default;
 
-  bool GetSize(size_t* size) const override;
-  bool GetOffset(size_t* offset) const override;
-  bool Seek(size_t offset) override;
+  bool GetSize(uint64_t* size) const override;
+  bool GetOffset(uint64_t* offset) const override;
+  bool Seek(uint64_t offset) override;
   bool Read(void* buffer, size_t length) override;
   bool Write(const void* buffer, size_t length) override;
   bool Close() override;
@@ -54,17 +54,17 @@ class ExtentStream : public StreamInterface {
   std::vector<ByteExtent>::iterator cur_extent_;
 
   // The current offset in the current |ByteExtent| |cur_extent_|.
-  size_t cur_extent_offset_;
+  uint64_t cur_extent_offset_;
 
   // |True| if the stream is write only. |False| if the stream is read only.
   bool is_for_write_;
 
   // The size of the stream. It is actually the cumulative size of all the bytes
   // in |extents_|.
-  size_t size_;
+  uint64_t size_;
 
   // The current offset.
-  size_t offset_;
+  uint64_t offset_;
 
   // Used for proper and faster seeking.
   std::vector<uint64_t> extents_upper_bounds_;

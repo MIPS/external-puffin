@@ -52,8 +52,8 @@ bool DecodePatch(const uint8_t* patch,
                  vector<BitExtent>* dst_deflates,
                  vector<ByteExtent>* src_puffs,
                  vector<ByteExtent>* dst_puffs,
-                 size_t* src_puff_size,
-                 size_t* dst_puff_size) {
+                 uint64_t* src_puff_size,
+                 uint64_t* dst_puff_size) {
   size_t offset = 0;
   uint32_t header_size;
   TEST_AND_RETURN_FALSE(patch_length >= (kMagicLength + sizeof(header_size)));
@@ -116,7 +116,7 @@ class BsdiffStream : public bsdiff::FileInterface {
   bool Close() override { return stream_->Close(); }
 
   bool GetSize(uint64_t* size) override {
-    size_t my_size;
+    uint64_t my_size;
     TEST_AND_RETURN_FALSE(stream_->GetSize(&my_size));
     *size = my_size;
     return true;
@@ -139,7 +139,7 @@ bool PuffPatch(UniqueStreamPtr src,
   size_t bsdiff_patch_size = 0;
   vector<BitExtent> src_deflates, dst_deflates;
   vector<ByteExtent> src_puffs, dst_puffs;
-  size_t src_puff_size, dst_puff_size;
+  uint64_t src_puff_size, dst_puff_size;
 
   // Decode the patch and get the bsdiff_patch.
   TEST_AND_RETURN_FALSE(DecodePatch(patch, patch_length, &bsdiff_patch_offset,

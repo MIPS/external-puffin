@@ -61,7 +61,7 @@ vector<T> StringToExtents(const string& str) {
   return extents;
 }
 
-const size_t kDefaultPuffCacheSize = 50 * 1024 * 1024;  // 50 MB
+const uint64_t kDefaultPuffCacheSize = 50 * 1024 * 1024;  // 50 MB
 
 // An enum representing the type of compressed files.
 enum class FileType { kDeflate, kZlib, kGzip, kZip, kRaw, kUnknown };
@@ -123,7 +123,7 @@ bool LocateDeflatesBasedOnFileType(const UniqueStreamPtr& stream,
     return true;
   }
 
-  size_t stream_size;
+  uint64_t stream_size;
   TEST_AND_RETURN_FALSE(stream->GetSize(&stream_size));
   if (file_type == FileType::kDeflate) {
     // Assume the whole stream is a deflate block.
@@ -244,7 +244,7 @@ int main(int argc, char** argv) {
                             -1);
     }
     TEST_AND_RETURN_VALUE(dst_puffs.empty(), -1);
-    size_t dst_puff_size;
+    uint64_t dst_puff_size;
     TEST_AND_RETURN_VALUE(FindPuffLocations(src_stream, src_deflates_bit,
                                             &dst_puffs, &dst_puff_size),
                           -1);
@@ -262,10 +262,10 @@ int main(int argc, char** argv) {
                       : std::move(dst_stream);
 
     Buffer buffer(1024 * 1024);
-    size_t bytes_wrote = 0;
+    uint64_t bytes_wrote = 0;
     while (bytes_wrote < dst_puff_size) {
-      auto write_size = std::min(
-          buffer.size(), static_cast<size_t>(dst_puff_size - bytes_wrote));
+      auto write_size = std::min(static_cast<uint64_t>(buffer.size()),
+                                 dst_puff_size - bytes_wrote);
       TEST_AND_RETURN_VALUE(reader->Read(buffer.data(), write_size), -1);
       TEST_AND_RETURN_VALUE(writer->Write(buffer.data(), write_size), -1);
       bytes_wrote += write_size;
@@ -284,9 +284,10 @@ int main(int argc, char** argv) {
           std::move(dst_stream), huffer, dst_puff_size, dst_deflates_bit,
           src_puffs);
 
-      size_t bytes_read = 0;
+      uint64_t bytes_read = 0;
       while (bytes_read < dst_puff_size) {
-        auto read_size = std::min(buffer.size(), dst_puff_size - bytes_read);
+        auto read_size = std::min(static_cast<uint64_t>(buffer.size()),
+                                  dst_puff_size - bytes_read);
         TEST_AND_RETURN_VALUE(read_puff_stream->Read(buffer.data(), read_size),
                               -1);
         TEST_AND_RETURN_VALUE(huff_writer->Write(buffer.data(), read_size), -1);
@@ -299,7 +300,7 @@ int main(int argc, char** argv) {
                    << ", is this intentional?";
     }
     TEST_AND_RETURN_VALUE(src_puffs.size() == dst_deflates_bit.size(), -1);
-    size_t src_stream_size;
+    uint64_t src_stream_size;
     TEST_AND_RETURN_VALUE(src_stream->GetSize(&src_stream_size), -1);
     auto dst_file = FileStream::Open(FLAGS_dst_file, false, true);
     TEST_AND_RETURN_VALUE(dst_file, -1);
@@ -310,9 +311,10 @@ int main(int argc, char** argv) {
                                                   dst_deflates_bit, src_puffs);
 
     Buffer buffer(1024 * 1024);
-    size_t bytes_read = 0;
+    uint64_t bytes_read = 0;
     while (bytes_read < src_stream_size) {
-      auto read_size = std::min(buffer.size(), src_stream_size - bytes_read);
+      auto read_size = std::min(static_cast<uint64_t>(buffer.size()),
+                                src_stream_size - bytes_read);
       TEST_AND_RETURN_VALUE(src_stream->Read(buffer.data(), read_size), -1);
       TEST_AND_RETURN_VALUE(dst_stream->Write(buffer.data(), read_size), -1);
       bytes_read += read_size;
@@ -370,7 +372,7 @@ int main(int argc, char** argv) {
   } else if (FLAGS_operation == "puffpatch") {
     auto patch_stream = FileStream::Open(FLAGS_patch_file, true, false);
     TEST_AND_RETURN_VALUE(patch_stream, -1);
-    size_t patch_size;
+    uint64_t patch_size;
     TEST_AND_RETURN_VALUE(patch_stream->GetSize(&patch_size), -1);
 
     Buffer puffdiff_delta(patch_size);

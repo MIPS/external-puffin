@@ -32,9 +32,9 @@ inline T get_unaligned(const void* address) {
 // Calculate both the compressed size and uncompressed size of the deflate
 // block that starts from the offset |start| of buffer |data|.
 bool CalculateSizeOfDeflateBlock(const puffin::Buffer& data,
-                                 size_t start,
-                                 size_t* compressed_size,
-                                 size_t* uncompressed_size) {
+                                 uint64_t start,
+                                 uint64_t* compressed_size,
+                                 uint64_t* uncompressed_size) {
   TEST_AND_RETURN_FALSE(compressed_size != nullptr &&
                         uncompressed_size != nullptr);
 
@@ -79,8 +79,8 @@ namespace puffin {
 using std::string;
 using std::vector;
 
-size_t BytesInByteExtents(const vector<ByteExtent>& extents) {
-  size_t bytes = 0;
+uint64_t BytesInByteExtents(const vector<ByteExtent>& extents) {
+  uint64_t bytes = 0;
   for (const auto& extent : extents) {
     bytes += extent.length;
   }
@@ -113,7 +113,7 @@ bool LocateDeflatesInZlib(const Buffer& data,
   auto flag = data[1];
   TEST_AND_RETURN_FALSE(((cmf << 8) + flag) % 31 == 0);
 
-  size_t header_len = 2;
+  uint64_t header_len = 2;
   if (flag & 0x20) {
     header_len += 4;  // 4 bytes for the preset dictionary.
   }
@@ -182,7 +182,7 @@ bool LocateDeflatesInZlibBlocks(const string& file_path,
 // https://www.ietf.org/rfc/rfc1952.txt
 bool LocateDeflatesInGzip(const Buffer& data,
                           vector<ByteExtent>* deflate_blocks) {
-  size_t member_start = 0;
+  uint64_t member_start = 0;
   while (member_start < data.size()) {
     // Each member entry has the following format
     // 0      1     0x1F
@@ -197,7 +197,7 @@ bool LocateDeflatesInGzip(const Buffer& data,
     TEST_AND_RETURN_FALSE(data[member_start + 1] == 0x8B);
     TEST_AND_RETURN_FALSE(data[member_start + 2] == 8);
 
-    size_t offset = member_start + 10;
+    uint64_t offset = member_start + 10;
     int flag = data[member_start + 3];
     // Extra field
     if (flag & 4) {
@@ -230,7 +230,7 @@ bool LocateDeflatesInGzip(const Buffer& data,
       offset += 2;
     }
 
-    size_t compressed_size, uncompressed_size;
+    uint64_t compressed_size, uncompressed_size;
     TEST_AND_RETURN_FALSE(CalculateSizeOfDeflateBlock(
         data, offset, &compressed_size, &uncompressed_size));
     TEST_AND_RETURN_FALSE(offset + compressed_size <= data.size());
@@ -254,7 +254,7 @@ bool LocateDeflatesInGzip(const Buffer& data,
 // https://support.pkware.com/display/PKZIP/APPNOTE
 bool LocateDeflatesInZipArchive(const Buffer& data,
                                 vector<ByteExtent>* deflate_blocks) {
-  size_t pos = 0;
+  uint64_t pos = 0;
   while (pos <= data.size() - 30) {
     // TODO(xunchang) add support for big endian system when searching for
     // magic numbers.
@@ -295,8 +295,8 @@ bool LocateDeflatesInZipArchive(const Buffer& data,
       continue;
     }
 
-    size_t calculated_compressed_size;
-    size_t calculated_uncompressed_size;
+    uint64_t calculated_compressed_size;
+    uint64_t calculated_uncompressed_size;
     if (!CalculateSizeOfDeflateBlock(data, pos + header_size,
                                      &calculated_compressed_size,
                                      &calculated_uncompressed_size)) {
@@ -342,7 +342,7 @@ bool LocateDeflateSubBlocksInZipArchive(const Buffer& data,
 bool FindPuffLocations(const UniqueStreamPtr& src,
                        const vector<BitExtent>& deflates,
                        vector<ByteExtent>* puffs,
-                       size_t* out_puff_size) {
+                       uint64_t* out_puff_size) {
   Puffer puffer;
   Buffer deflate_buffer;
 
@@ -350,7 +350,7 @@ bool FindPuffLocations(const UniqueStreamPtr& src,
   // puff. At the end we add this cummulative size difference to the size of the
   // deflate stream to get the size of the puff stream. We use signed size
   // because puff size could be smaller than deflate size.
-  ssize_t total_size_difference = 0;
+  int64_t total_size_difference = 0;
   for (auto deflate = deflates.begin(); deflate != deflates.end(); ++deflate) {
     // Read from src into deflate_buffer.
     auto start_byte = deflate->offset / 8;
@@ -361,7 +361,7 @@ bool FindPuffLocations(const UniqueStreamPtr& src,
         src->Read(deflate_buffer.data(), deflate_buffer.size()));
     // Find the size of the puff.
     BufferBitReader bit_reader(deflate_buffer.data(), deflate_buffer.size());
-    size_t bits_to_skip = deflate->offset % 8;
+    uint64_t bits_to_skip = deflate->offset % 8;
     TEST_AND_RETURN_FALSE(bit_reader.CacheBits(bits_to_skip));
     bit_reader.DropBits(bits_to_skip);
 
@@ -389,7 +389,7 @@ bool FindPuffLocations(const UniqueStreamPtr& src,
 
     start_byte = ((deflate->offset + 7) / 8);
     end_byte = (deflate->offset + deflate->length) / 8;
-    ssize_t deflate_length_in_bytes = end_byte - start_byte;
+    int64_t deflate_length_in_bytes = end_byte - start_byte;
 
     // If there was no gap bits between the current and previous deflates, there
     // will be no extra gap byte, so the offset will be shifted one byte back.
@@ -398,12 +398,12 @@ bool FindPuffLocations(const UniqueStreamPtr& src,
     // Add the location into puff.
     puffs->emplace_back(puff_offset, puff_size);
     total_size_difference +=
-        static_cast<ssize_t>(puff_size) - deflate_length_in_bytes - gap;
+        static_cast<int64_t>(puff_size) - deflate_length_in_bytes - gap;
   }
 
-  size_t src_size;
+  uint64_t src_size;
   TEST_AND_RETURN_FALSE(src->GetSize(&src_size));
-  auto final_size = static_cast<ssize_t>(src_size) + total_size_difference;
+  auto final_size = static_cast<int64_t>(src_size) + total_size_difference;
   TEST_AND_RETURN_FALSE(final_size >= 0);
   *out_puff_size = final_size;
   return true;

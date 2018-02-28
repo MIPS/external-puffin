@@ -29,20 +29,20 @@ MemoryStream::MemoryStream(const Buffer* read_memory, Buffer* write_memory)
       offset_(0),
       open_(true) {}
 
-bool MemoryStream::GetSize(size_t* size) const {
+bool MemoryStream::GetSize(uint64_t* size) const {
   *size =
       read_memory_ != nullptr ? read_memory_->size() : write_memory_->size();
   return true;
 }
 
-bool MemoryStream::GetOffset(size_t* offset) const {
+bool MemoryStream::GetOffset(uint64_t* offset) const {
   *offset = offset_;
   return true;
 }
 
-bool MemoryStream::Seek(size_t offset) {
+bool MemoryStream::Seek(uint64_t offset) {
   TEST_AND_RETURN_FALSE(open_);
-  size_t size;
+  uint64_t size;
   GetSize(&size);
   TEST_AND_RETURN_FALSE(offset <= size);
   offset_ = offset;
