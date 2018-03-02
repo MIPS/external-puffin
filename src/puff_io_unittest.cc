@@ -224,35 +224,99 @@ TEST(PuffIOTest, InputOutputTest) {
   ASSERT_EQ(buf.size() - pr.BytesLeft(), epw.Size());
 }
 
-// Testing boundary
-TEST(PuffIOTest, BoundaryTest) {
-  Buffer buf(5);
+// Testing metadata boundary.
+TEST(PuffIOTest, MetadataBoundaryTest) {
   PuffData pd;
   Error error;
-
+  Buffer buf(3);
   BufferPuffWriter pw(buf.data(), buf.size());
-  uint8_t block[] = {10, 11, 12};
+
+  // Block metadata takes two + varied bytes, so on a thre byte buffer, only one
+  // bytes is left for the varied part of metadata.
   pd.type = PuffData::Type::kBlockMetadata;
-  memcpy(pd.block_metadata, block, sizeof(block));
-  pd.length = sizeof(block) + 1;
+  pd.length = 2;
   ASSERT_FALSE(pw.Insert(pd, &error));
   ASSERT_EQ(error, Error::kInsufficientOutput);
+  pd.length = 0;  // length should be at least 1.
+  ASSERT_FALSE(pw.Insert(pd, &error));
+  pd.length = 1;
+  ASSERT_TRUE(pw.Insert(pd, &error));
 
-  BufferPuffWriter pw2(buf.data(), buf.size());
-  pd.length = sizeof(block);
-  ASSERT_TRUE(pw2.Insert(pd, &error));
+  Buffer puff_buffer = {0x00, 0x03, 0x02, 0x00, 0x00};
+  BufferPuffReader pr(puff_buffer.data(), puff_buffer.size());
+  ASSERT_FALSE(pr.GetNext(&pd, &error));
+}
 
-  BufferPuffReader pr(buf.data(), buf.size());
-  ASSERT_TRUE(pr.GetNext(&pd, &error));
-  ASSERT_EQ(pd.type, PuffData::Type::kBlockMetadata);
-  ASSERT_EQ(pd.length, sizeof(block));
-  ASSERT_EQ(pd.block_metadata[0], 10);
+TEST(PuffIOTest, InvalidCopyLengthsDistanceTest) {
+  PuffData pd;
+  Error error;
+  Buffer puff_buffer(20);
+  BufferPuffWriter pw(puff_buffer.data(), puff_buffer.size());
 
-  BufferPuffReader pr2(buf.data(), sizeof(block));
-  ASSERT_FALSE(pr2.GetNext(&pd, &error));
-  ASSERT_EQ(error, Error::kInsufficientInput);
+  // Invalid Lenght values.
+  pd.type = PuffData::Type::kLenDist;
+  pd.distance = 1;
+  pd.length = 0;
+  EXPECT_FALSE(pw.Insert(pd, &error));
+  pd.length = 1;
+  EXPECT_FALSE(pw.Insert(pd, &error));
+  pd.length = 2;
+  EXPECT_FALSE(pw.Insert(pd, &error));
+  pd.length = 3;
+  EXPECT_TRUE(pw.Insert(pd, &error));
+  pd.length = 259;
+  EXPECT_FALSE(pw.Insert(pd, &error));
+  pd.length = 258;
+  EXPECT_TRUE(pw.Insert(pd, &error));
 
-  // TODO(ahassani): Boundary check for literals and lendist.
+  // Invalid distance values.
+  pd.length = 3;
+  pd.distance = 0;
+  EXPECT_FALSE(pw.Insert(pd, &error));
+  pd.distance = 1;
+  EXPECT_TRUE(pw.Insert(pd, &error));
+  pd.distance = 32769;
+  EXPECT_FALSE(pw.Insert(pd, &error));
+  pd.distance = 32768;
+  EXPECT_TRUE(pw.Insert(pd, &error));
+
+  // First three bytes header, four bytes value lit/len, and four bytes
+  // invalid lit/len.
+  puff_buffer = {0x00, 0x00, 0xFF, 0xFF, 0x80, 0x00,
+                 0x00, 0xFF, 0x82, 0x00, 0x00};
+  BufferPuffReader pr(puff_buffer.data(), puff_buffer.size());
+  EXPECT_TRUE(pr.GetNext(&pd, &error));
+  EXPECT_EQ(pd.type, PuffData::Type::kBlockMetadata);
+  EXPECT_TRUE(pr.GetNext(&pd, &error));
+  EXPECT_EQ(pd.type, PuffData::Type::kLenDist);
+  EXPECT_FALSE(pr.GetNext(&pd, &error));
+}
+
+TEST(PuffIOTest, InvalidCopyLenghtDistanceBoundaryTest) {
+  PuffData pd;
+  Error error;
+  Buffer puff_buffer(5);
+
+  pd.type = PuffData::Type::kLenDist;
+  pd.distance = 1;
+  pd.length = 129;
+  for (size_t i = 1; i < 2; i++) {
+    BufferPuffWriter pw(puff_buffer.data(), i);
+    EXPECT_FALSE(pw.Insert(pd, &error));
+  }
+
+  pd.length = 130;
+  for (size_t i = 1; i < 3; i++) {
+    BufferPuffWriter pw(puff_buffer.data(), i);
+    EXPECT_FALSE(pw.Insert(pd, &error));
+  }
+
+  // First three bytes header, three bytes value lit/len.
+  puff_buffer = {0x00, 0x00, 0xFF, 0xFF, 0x80, 0x00};
+  BufferPuffReader pr(puff_buffer.data(), puff_buffer.size());
+  EXPECT_TRUE(pr.GetNext(&pd, &error));
+  EXPECT_EQ(pd.type, PuffData::Type::kBlockMetadata);
+  EXPECT_FALSE(pr.GetNext(&pd, &error));
 }
 
 TEST(PuffIOTest, LiteralsTest) {

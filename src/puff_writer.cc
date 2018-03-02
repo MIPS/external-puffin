@@ -85,7 +85,10 @@ bool BufferPuffWriter::Insert(const PuffData& pd, Error* error) {
     case PuffData::Type::kLenDist:
       DVLOG(2) << "Write length: " << pd.length << " distance: " << pd.distance;
       TEST_AND_RETURN_FALSE(FlushLiterals(error));
-      TEST_AND_RETURN_FALSE_SET_ERROR(pd.length < 259, Error::kInvalidInput);
+      TEST_AND_RETURN_FALSE_SET_ERROR(pd.length <= 258 && pd.length >= 3,
+                                      Error::kInvalidInput);
+      TEST_AND_RETURN_FALSE_SET_ERROR(pd.distance <= 32768 && pd.distance >= 1,
+                                      Error::kInvalidInput);
       if (pd.length < 130) {
         if (puff_buf_out_ != nullptr) {
           // Boundary check
@@ -111,7 +114,8 @@ bool BufferPuffWriter::Insert(const PuffData& pd, Error* error) {
       }
 
       if (puff_buf_out_ != nullptr) {
-        WriteUint16ToByteArray(pd.distance, &puff_buf_out_[index_]);
+        // Write the distance in the range [1..32768] zero-based.
+        WriteUint16ToByteArray(pd.distance - 1, &puff_buf_out_[index_]);
       }
       index_ += 2;
       len_index_ = index_;
@@ -121,6 +125,9 @@ bool BufferPuffWriter::Insert(const PuffData& pd, Error* error) {
     case PuffData::Type::kBlockMetadata:
       DVLOG(2) << "Write block metadata length: " << pd.length;
       TEST_AND_RETURN_FALSE(FlushLiterals(error));
+      TEST_AND_RETURN_FALSE_SET_ERROR(
+          pd.length <= sizeof(pd.block_metadata) && pd.length > 0,
+          Error::kInvalidInput);
       if (puff_buf_out_ != nullptr) {
         // Boundary check
         TEST_AND_RETURN_FALSE_SET_ERROR(index_ + pd.length + 2 <= puff_size_,
@@ -130,7 +137,6 @@ bool BufferPuffWriter::Insert(const PuffData& pd, Error* error) {
       }
       index_ += 2;
 
-      TEST_AND_RETURN_FALSE(pd.length <= sizeof(pd.block_metadata));
       if (puff_buf_out_ != nullptr) {
         memcpy(&puff_buf_out_[index_], pd.block_metadata, pd.length);
       }

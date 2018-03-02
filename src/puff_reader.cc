@@ -24,10 +24,10 @@ bool BufferPuffReader::GetNext(PuffData* data, Error* error) {
   PuffData& pd = *data;
   size_t length = 0;
   if (state_ == State::kReadingLenDist) {
+    // Boundary check
+    TEST_AND_RETURN_FALSE_SET_ERROR(index_ < puff_size_,
+                                    Error::kInsufficientInput);
     if (puff_buf_in_[index_] & 0x80) {  // Reading length/distance.
-      // Boundary check
-      TEST_AND_RETURN_FALSE_SET_ERROR(index_ < puff_size_,
-                                      Error::kInsufficientInput);
       if ((puff_buf_in_[index_] & 0x7F) < 127) {
         length = puff_buf_in_[index_] & 0x7F;
       } else {
@@ -38,6 +38,8 @@ bool BufferPuffReader::GetNext(PuffData* data, Error* error) {
         length = puff_buf_in_[index_] + 127;
       }
       length += 3;
+      TEST_AND_RETURN_FALSE(length <= 259);
+
       index_++;
 
       // End of block. End of block is similar to length/distance but without
@@ -53,9 +55,13 @@ bool BufferPuffReader::GetNext(PuffData* data, Error* error) {
       TEST_AND_RETURN_FALSE_SET_ERROR(index_ + 1 < puff_size_,
                                       Error::kInsufficientInput);
       auto distance = ReadByteArrayToUint16(&puff_buf_in_[index_]);
+      // The distance in RFC is in the range [1..32768], but in the puff spec,
+      // we write zero-based distance in the puff stream.
+      TEST_AND_RETURN_FALSE_SET_ERROR(distance < (1 << 15),
+                                      Error::kInsufficientInput);
+      distance++;
       index_ += 2;
 
-      TEST_AND_RETURN_FALSE(length < 259);
       pd.type = PuffData::Type::kLenDist;
       pd.length = length;
       pd.distance = distance;
