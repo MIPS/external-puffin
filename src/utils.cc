@@ -79,14 +79,6 @@ namespace puffin {
 using std::string;
 using std::vector;
 
-uint64_t BytesInByteExtents(const vector<ByteExtent>& extents) {
-  uint64_t bytes = 0;
-  for (const auto& extent : extents) {
-    bytes += extent.length;
-  }
-  return bytes;
-}
-
 // This function uses RFC1950 (https://www.ietf.org/rfc/rfc1950.txt) for the
 // definition of a zlib stream.  For finding the deflate blocks, we relying on
 // the proper size of the zlib stream in |data|. Basically the size of the zlib
