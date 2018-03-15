@@ -197,47 +197,49 @@ TEST_F(StreamTest, FileStreamTest) {
 TEST_F(StreamTest, PuffinStreamTest) {
   shared_ptr<Puffer> puffer(new Puffer());
   auto read_stream = PuffinStream::CreateForPuff(
-      MemoryStream::CreateForRead(kDeflates8), puffer, kPuffs8.size(),
-      kSubblockDeflateExtents8, kPuffExtents8);
-  TestRead(read_stream.get(), kPuffs8);
+      MemoryStream::CreateForRead(kDeflatesSample1), puffer,
+      kPuffsSample1.size(), kSubblockDeflateExtentsSample1,
+      kPuffExtentsSample1);
+  TestRead(read_stream.get(), kPuffsSample1);
   TestSeek(read_stream.get(), false);
   TestClose(read_stream.get());
 
   // Test the stream with puff cache.
   read_stream = PuffinStream::CreateForPuff(
-      MemoryStream::CreateForRead(kDeflates8), puffer, kPuffs8.size(),
-      kSubblockDeflateExtents8, kPuffExtents8, 8 /* max_cache_size */);
-  TestRead(read_stream.get(), kPuffs8);
+      MemoryStream::CreateForRead(kDeflatesSample1), puffer,
+      kPuffsSample1.size(), kSubblockDeflateExtentsSample1, kPuffExtentsSample1,
+      8 /* max_cache_size */);
+  TestRead(read_stream.get(), kPuffsSample1);
   TestSeek(read_stream.get(), false);
   TestClose(read_stream.get());
 
-  Buffer buf(kDeflates8.size());
+  Buffer buf(kDeflatesSample1.size());
   shared_ptr<Huffer> huffer(new Huffer());
   auto write_stream = PuffinStream::CreateForHuff(
-      MemoryStream::CreateForWrite(&buf), huffer, kPuffs8.size(),
-      kSubblockDeflateExtents8, kPuffExtents8);
+      MemoryStream::CreateForWrite(&buf), huffer, kPuffsSample1.size(),
+      kSubblockDeflateExtentsSample1, kPuffExtentsSample1);
 
   ASSERT_TRUE(write_stream->Seek(0));
-  for (size_t idx = 0; idx < kPuffs8.size(); idx++) {
-    ASSERT_TRUE(write_stream->Write(&kPuffs8[idx], 1));
+  for (size_t idx = 0; idx < kPuffsSample1.size(); idx++) {
+    ASSERT_TRUE(write_stream->Write(&kPuffsSample1[idx], 1));
   }
   // Make sure the write works
-  ASSERT_EQ(buf, kDeflates8);
+  ASSERT_EQ(buf, kDeflatesSample1);
 
   std::fill(buf.begin(), buf.end(), 0);
   ASSERT_TRUE(write_stream->Seek(0));
-  ASSERT_TRUE(write_stream->Write(kPuffs8.data(), kPuffs8.size()));
+  ASSERT_TRUE(write_stream->Write(kPuffsSample1.data(), kPuffsSample1.size()));
   // Check its correctness.
-  ASSERT_EQ(buf, kDeflates8);
+  ASSERT_EQ(buf, kDeflatesSample1);
 
   // Write entire buffer one byte at a time. (all zeros).
   std::fill(buf.begin(), buf.end(), 0);
   ASSERT_TRUE(write_stream->Seek(0));
-  for (const auto& byte : kPuffs8) {
+  for (const auto& byte : kPuffsSample1) {
     ASSERT_TRUE(write_stream->Write(&byte, 1));
   }
   // Check its correctness.
-  ASSERT_EQ(buf, kDeflates8);
+  ASSERT_EQ(buf, kDeflatesSample1);
 
   // No TestSeek is needed as PuffinStream is not supposed to seek to anywhere
   // except 0.

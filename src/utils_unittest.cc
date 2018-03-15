@@ -114,13 +114,13 @@ void CheckFindPuffLocation(const Buffer& compressed,
 
 // Test Simple Puffing of the source.
 TEST(UtilsTest, FindPuffLocations1Test) {
-  CheckFindPuffLocation(kDeflates8, kSubblockDeflateExtents8, kPuffExtents8,
-                        kPuffs8.size());
+  CheckFindPuffLocation(kDeflatesSample1, kSubblockDeflateExtentsSample1,
+                        kPuffExtentsSample1, kPuffsSample1.size());
 }
 
 TEST(UtilsTest, FindPuffLocations2Test) {
-  CheckFindPuffLocation(kDeflates9, kSubblockDeflateExtents9, kPuffExtents9,
-                        kPuffs9.size());
+  CheckFindPuffLocation(kDeflatesSample2, kSubblockDeflateExtentsSample2,
+                        kPuffExtentsSample2, kPuffsSample2.size());
 }
 
 TEST(UtilsTest, LocateDeflatesInZlib) {
