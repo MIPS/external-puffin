@@ -17,9 +17,9 @@
 #include "puffin/src/puff_reader.h"
 #include "puffin/src/set_errors.h"
 
-namespace puffin {
-
 using std::string;
+
+namespace puffin {
 
 Huffer::Huffer() : dyn_ht_(new HuffmanTable()), fix_ht_(new HuffmanTable()) {}
 

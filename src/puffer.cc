@@ -18,10 +18,10 @@
 #include "puffin/src/puff_writer.h"
 #include "puffin/src/set_errors.h"
 
-namespace puffin {
-
 using std::string;
 using std::vector;
+
+namespace puffin {
 
 Puffer::Puffer() : dyn_ht_(new HuffmanTable()), fix_ht_(new HuffmanTable()) {}
 

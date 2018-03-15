@@ -4,9 +4,9 @@
 
 #include "puffin/src/unittest_common.h"
 
-namespace puffin {
-
 using std::string;
+
+namespace puffin {
 
 bool MakeTempFile(string* filename, int* fd) {
   char tmp_template[] = "/tmp/puffin-XXXXXX";

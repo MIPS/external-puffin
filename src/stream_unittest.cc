@@ -14,11 +14,11 @@
 #include "puffin/src/puffin_stream.h"
 #include "puffin/src/unittest_common.h"
 
-namespace puffin {
-
 using std::shared_ptr;
 using std::string;
 using std::vector;
+
+namespace puffin {
 
 class StreamTest : public ::testing::Test {
  public:

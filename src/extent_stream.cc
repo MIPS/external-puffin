@@ -9,9 +9,9 @@
 
 #include "puffin/src/set_errors.h"
 
-namespace puffin {
-
 using std::vector;
+
+namespace puffin {
 
 UniqueStreamPtr ExtentStream::CreateForWrite(
     UniqueStreamPtr stream, const vector<ByteExtent>& extents) {

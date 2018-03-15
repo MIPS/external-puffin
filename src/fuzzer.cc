@@ -17,8 +17,6 @@
 #include "puffin/src/puff_reader.h"
 #include "puffin/src/puff_writer.h"
 
-using std::vector;
-
 using puffin::BitExtent;
 using puffin::Buffer;
 using puffin::BufferBitReader;
@@ -29,6 +27,7 @@ using puffin::Error;
 using puffin::Huffer;
 using puffin::MemoryStream;
 using puffin::Puffer;
+using std::vector;
 
 namespace {
 void FuzzPuff(const uint8_t* data, size_t size) {

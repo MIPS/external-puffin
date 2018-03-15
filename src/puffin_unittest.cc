@@ -22,10 +22,10 @@
 #include "puffin/src/set_errors.h"
 #include "puffin/src/unittest_common.h"
 
-namespace puffin {
-
 using std::string;
 using std::vector;
+
+namespace puffin {
 
 class PuffinTest : public ::testing::Test {
  public:

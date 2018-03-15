@@ -20,11 +20,11 @@
 #include "puffin/src/puff_writer.h"
 #include "puffin/src/set_errors.h"
 
-namespace puffin {
-
 using std::shared_ptr;
 using std::unique_ptr;
 using std::vector;
+
+namespace puffin {
 
 namespace {
 

@@ -23,10 +23,10 @@
 #include "puffin/src/puffin_stream.h"
 #include "puffin/src/set_errors.h"
 
-namespace puffin {
-
 using std::string;
 using std::vector;
+
+namespace puffin {
 
 namespace {
 

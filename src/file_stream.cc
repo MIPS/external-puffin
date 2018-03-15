@@ -13,9 +13,9 @@
 #include "puffin/src/include/puffin/common.h"
 #include "puffin/src/set_errors.h"
 
-namespace puffin {
-
 using std::string;
+
+namespace puffin {
 
 UniqueStreamPtr FileStream::Open(const string& path, bool read, bool write) {
   TEST_AND_RETURN_VALUE(read || write, nullptr);

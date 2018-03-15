@@ -19,10 +19,10 @@
 
 #define PRINT_SAMPLE 0  // Set to 1 if you want to print the generated samples.
 
-namespace puffin {
-
 using std::string;
 using std::vector;
+
+namespace puffin {
 
 void TestPatching(const Buffer& src_buf,
                   const Buffer& dst_buf,

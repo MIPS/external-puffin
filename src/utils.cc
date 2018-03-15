@@ -20,6 +20,9 @@
 #include "puffin/src/puff_writer.h"
 #include "puffin/src/set_errors.h"
 
+using std::string;
+using std::vector;
+
 namespace {
 // Use memcpy to access the unaligned data of type |T|.
 template <typename T>
@@ -75,9 +78,6 @@ bool CalculateSizeOfDeflateBlock(const puffin::Buffer& data,
 }  // namespace
 
 namespace puffin {
-
-using std::string;
-using std::vector;
 
 // This function uses RFC1950 (https://www.ietf.org/rfc/rfc1950.txt) for the
 // definition of a zlib stream.  For finding the deflate blocks, we relying on

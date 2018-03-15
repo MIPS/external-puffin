@@ -14,10 +14,10 @@
 #include "puffin/src/memory_stream.h"
 #include "puffin/src/unittest_common.h"
 
-namespace puffin {
-
 using std::string;
 using std::vector;
+
+namespace puffin {
 
 namespace {
 const uint8_t kZipEntries[] = {

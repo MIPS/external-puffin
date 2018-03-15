@@ -16,13 +16,13 @@
 #include "puffin/src/puff_writer.h"
 #include "puffin/src/set_errors.h"
 
-namespace puffin {
-namespace sample_generator {
-
 using std::cerr;
 using std::cout;
 using std::endl;
 using std::string;
+
+namespace puffin {
+namespace sample_generator {
 
 bool CompressToDeflate(const Buffer& uncomp,
                        Buffer* comp,
