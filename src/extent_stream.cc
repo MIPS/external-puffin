@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <utility>
 
-#include "puffin/src/set_errors.h"
+#include "puffin/src/logging.h"
 
 using std::vector;
 

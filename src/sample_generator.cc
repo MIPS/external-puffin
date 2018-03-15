@@ -13,8 +13,8 @@
 #include <string>
 
 #include "puffin/src/bit_reader.h"
+#include "puffin/src/logging.h"
 #include "puffin/src/puff_writer.h"
-#include "puffin/src/set_errors.h"
 
 using std::cerr;
 using std::cout;
@@ -77,12 +77,11 @@ bool PrintSample(Puffer* puffer,
   PrintArray("compressed", comp);
 
   Buffer puff(original.size() * 3 + 10);
-  puffin::Error error;
 
   BufferBitReader bit_reader(comp.data(), comp.size());
   BufferPuffWriter puff_writer(puff.data(), puff.size());
   TEST_AND_RETURN_FALSE(
-      puffer->PuffDeflate(&bit_reader, &puff_writer, nullptr, &error));
+      puffer->PuffDeflate(&bit_reader, &puff_writer, nullptr));
   TEST_AND_RETURN_FALSE(comp.size() == bit_reader.Offset());
 
   puff.resize(puff_writer.Size());

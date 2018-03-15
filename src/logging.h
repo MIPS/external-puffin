@@ -2,16 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_SET_ERRORS_H_
-#define SRC_SET_ERRORS_H_
+#ifndef SRC_LOGGING_H_
+#define SRC_LOGGING_H_
 
 #ifdef USE_BRILLO
 #include "base/logging.h"
 #else
 #include "glog/logging.h"
 #endif
-
-namespace puffin {
 
 #define TEST_AND_RETURN_FALSE(_x)   \
   do {                              \
@@ -29,15 +27,4 @@ namespace puffin {
     }                                 \
   } while (0)
 
-#define TEST_AND_RETURN_FALSE_SET_ERROR(_x, _error) \
-  do {                                              \
-    if (!(_x)) {                                    \
-      (*error) = (_error);                          \
-      LOG(ERROR) << #_x " failed.";                 \
-      return false;                                 \
-    }                                               \
-  } while (0)
-
-}  // namespace puffin
-
-#endif  // SRC_SET_ERRORS_H_
+#endif  // SRC_LOGGING_H_

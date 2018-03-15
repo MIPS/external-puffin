@@ -14,12 +14,12 @@
 #include "puffin/src/include/puffin/huffer.h"
 #include "puffin/src/include/puffin/puffer.h"
 #include "puffin/src/include/puffin/utils.h"
+#include "puffin/src/logging.h"
 #include "puffin/src/memory_stream.h"
 #include "puffin/src/puff_reader.h"
 #include "puffin/src/puff_writer.h"
 #include "puffin/src/puffin_stream.h"
 #include "puffin/src/sample_generator.h"
-#include "puffin/src/set_errors.h"
 #include "puffin/src/unittest_common.h"
 
 using std::string;
@@ -39,9 +39,8 @@ class PuffinTest : public ::testing::Test {
     auto start = static_cast<uint8_t*>(out_buf);
 
     PuffData pd;
-    Error error;
     while (puff_reader.BytesLeft() != 0) {
-      TEST_AND_RETURN_FALSE(puff_reader.GetNext(&pd, &error));
+      TEST_AND_RETURN_FALSE(puff_reader.GetNext(&pd));
       switch (pd.type) {
         case PuffData::Type::kLiteral:
           *start = pd.byte;
@@ -79,34 +78,27 @@ class PuffinTest : public ::testing::Test {
   bool PuffDeflate(const uint8_t* comp_buf,
                    size_t comp_size,
                    uint8_t* puff_buf,
-                   size_t puff_size,
-                   Error* error) const {
+                   size_t puff_size) const {
     BufferBitReader bit_reader(comp_buf, comp_size);
     BufferPuffWriter puff_writer(puff_buf, puff_size);
 
     TEST_AND_RETURN_FALSE(
-        puffer_.PuffDeflate(&bit_reader, &puff_writer, nullptr, error));
-    TEST_AND_RETURN_FALSE_SET_ERROR(comp_size == bit_reader.Offset(),
-                                    Error::kInvalidInput);
-    TEST_AND_RETURN_FALSE_SET_ERROR(puff_size == puff_writer.Size(),
-                                    Error::kInvalidInput);
+        puffer_.PuffDeflate(&bit_reader, &puff_writer, nullptr));
+    TEST_AND_RETURN_FALSE(comp_size == bit_reader.Offset());
+    TEST_AND_RETURN_FALSE(puff_size == puff_writer.Size());
     return true;
   }
 
   bool HuffDeflate(const uint8_t* puff_buf,
                    size_t puff_size,
                    uint8_t* comp_buf,
-                   size_t comp_size,
-                   Error* error) const {
+                   size_t comp_size) const {
     BufferPuffReader puff_reader(puff_buf, puff_size);
     BufferBitWriter bit_writer(comp_buf, comp_size);
 
-    TEST_AND_RETURN_FALSE(
-        huffer_.HuffDeflate(&puff_reader, &bit_writer, error));
-    TEST_AND_RETURN_FALSE_SET_ERROR(comp_size == bit_writer.Size(),
-                                    Error::kInvalidInput);
-    TEST_AND_RETURN_FALSE_SET_ERROR(puff_reader.BytesLeft() == 0,
-                                    Error::kInvalidInput);
+    TEST_AND_RETURN_FALSE(huffer_.HuffDeflate(&puff_reader, &bit_writer));
+    TEST_AND_RETURN_FALSE(comp_size == bit_writer.Size());
+    TEST_AND_RETURN_FALSE(puff_reader.BytesLeft() == 0);
     return true;
   }
 
@@ -118,25 +110,20 @@ class PuffinTest : public ::testing::Test {
     out_puff->resize(expected_puff.size());
     auto comp_size = compressed.size();
     auto puff_size = out_puff->size();
-    Error error;
-    ASSERT_TRUE(PuffDeflate(compressed.data(), comp_size, out_puff->data(),
-                            puff_size, &error));
+    ASSERT_TRUE(
+        PuffDeflate(compressed.data(), comp_size, out_puff->data(), puff_size));
     ASSERT_EQ(puff_size, expected_puff.size());
     out_puff->resize(puff_size);
     ASSERT_EQ(expected_puff, *out_puff);
   }
 
   // Should fail when trying to puff |compressed|.
-  void FailPuffDeflate(const Buffer& compressed,
-                       Error expected_error,
-                       Buffer* out_puff) {
+  void FailPuffDeflate(const Buffer& compressed, Buffer* out_puff) {
     out_puff->resize(compressed.size() * 2 + 10);
     auto comp_size = compressed.size();
     auto puff_size = out_puff->size();
-    Error error;
-    ASSERT_FALSE(PuffDeflate(compressed.data(), comp_size, out_puff->data(),
-                             puff_size, &error));
-    ASSERT_EQ(error, expected_error);
+    ASSERT_FALSE(
+        PuffDeflate(compressed.data(), comp_size, out_puff->data(), puff_size));
   }
 
   // Huffs |puffed| into |out_huff| and checks its equality with
@@ -147,23 +134,18 @@ class PuffinTest : public ::testing::Test {
     out_huff->resize(expected_huff.size());
     auto huff_size = out_huff->size();
     auto puffed_size = puffed.size();
-    Error error;
-    ASSERT_TRUE(HuffDeflate(puffed.data(), puffed_size, out_huff->data(),
-                            huff_size, &error));
+    ASSERT_TRUE(
+        HuffDeflate(puffed.data(), puffed_size, out_huff->data(), huff_size));
     ASSERT_EQ(expected_huff, *out_huff);
   }
 
   // Should fail while huffing |puffed|
-  void FailHuffDeflate(const Buffer& puffed,
-                       Error expected_error,
-                       Buffer* out_compress) {
+  void FailHuffDeflate(const Buffer& puffed, Buffer* out_compress) {
     out_compress->resize(puffed.size());
     auto comp_size = out_compress->size();
     auto puff_size = puffed.size();
-    Error error;
-    ASSERT_TRUE(HuffDeflate(puffed.data(), puff_size, out_compress->data(),
-                            comp_size, &error));
-    ASSERT_EQ(error, expected_error);
+    ASSERT_TRUE(
+        HuffDeflate(puffed.data(), puff_size, out_compress->data(), comp_size));
   }
 
   // Decompresses from |puffed| into |uncompress| and checks its equality with
@@ -265,17 +247,16 @@ TEST_F(PuffinTest, DynamicHuffmanTest) {
 // Tests an uncompressed deflate block with invalid LEN/NLEN.
 TEST_F(PuffinTest, PuffDeflateFailedTest) {
   Buffer puffed;
-  FailPuffDeflate(kDeflate5, Error::kInvalidInput, &puffed);
+  FailPuffDeflate(kDeflate5, &puffed);
 }
 
 // Tests puffing a block with invalid block header.
 TEST_F(PuffinTest, PuffDeflateHeaderFailedTest) {
   Buffer puffed;
-  FailPuffDeflate(kDeflate6, Error::kInvalidInput, &puffed);
+  FailPuffDeflate(kDeflate6, &puffed);
 }
 
-// Tests puffing a block with final block bit unset so it returns
-// Error::kInsufficientInput.
+// Tests puffing a block with final block bit unset so it returns false.
 TEST_F(PuffinTest, PuffDeflateNoFinalBlockBitTest) {
   CheckSample(kRaw7, kDeflate7, kPuff7);
 }

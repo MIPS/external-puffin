@@ -7,8 +7,7 @@
 #include <algorithm>
 #include <vector>
 
-#include "puffin/src/include/puffin/errors.h"
-#include "puffin/src/set_errors.h"
+#include "puffin/src/logging.h"
 
 namespace puffin {
 
@@ -206,8 +205,7 @@ bool HuffmanTable::BuildFixedHuffmanTable() {
 
 bool HuffmanTable::BuildDynamicHuffmanTable(BitReaderInterface* br,
                                             uint8_t* buffer,
-                                            size_t* length,
-                                            Error* error) {
+                                            size_t* length) {
   // Initilize only once and reuse.
   if (!initialized_) {
     // Only resizing the arrays needed.
@@ -237,9 +235,9 @@ bool HuffmanTable::BuildDynamicHuffmanTable(BitReaderInterface* br,
   // |dynamic_lit_len_lens_| and |dynamic_distance_lens_|. Then it follows by
   // reading |dynamic_code_lens_|.
 
-  TEST_AND_RETURN_FALSE_SET_ERROR(*length >= 3, Error::kInsufficientOutput);
+  TEST_AND_RETURN_FALSE(*length >= 3);
   size_t index = 0;
-  TEST_AND_RETURN_FALSE_SET_ERROR(br->CacheBits(14), Error::kInsufficientInput);
+  TEST_AND_RETURN_FALSE(br->CacheBits(14));
   buffer[index++] = br->ReadBits(5);  // HLIST
   auto num_lit_len = br->ReadBits(5) + 257;
   br->DropBits(5);
@@ -252,18 +250,15 @@ bool HuffmanTable::BuildDynamicHuffmanTable(BitReaderInterface* br,
   auto num_codes = br->ReadBits(4) + 4;
   br->DropBits(4);
 
-  TEST_AND_RETURN_FALSE_SET_ERROR(
-      CheckHuffmanArrayLengths(num_lit_len, num_distance, num_codes),
-      Error::kInvalidInput);
+  TEST_AND_RETURN_FALSE(
+      CheckHuffmanArrayLengths(num_lit_len, num_distance, num_codes));
 
   bool checked = false;
   size_t idx = 0;
-  TEST_AND_RETURN_FALSE_SET_ERROR(*length - index >= (num_codes + 1) / 2,
-                                  Error::kInsufficientOutput);
+  TEST_AND_RETURN_FALSE(*length - index >= (num_codes + 1) / 2);
   // Two codes per byte
   for (; idx < num_codes; idx++) {
-    TEST_AND_RETURN_FALSE_SET_ERROR(br->CacheBits(3),
-                                    Error::kInsufficientInput);
+    TEST_AND_RETURN_FALSE(br->CacheBits(3));
     code_lens_[kPermutations[idx]] = br->ReadBits(3);
     if (checked) {
       buffer[index++] |= br->ReadBits(3);
@@ -281,16 +276,15 @@ bool HuffmanTable::BuildDynamicHuffmanTable(BitReaderInterface* br,
     code_lens_[kPermutations[idx]] = 0;
   }
 
-  TEST_AND_RETURN_FALSE_SET_ERROR(
-      BuildHuffmanCodes(code_lens_, &code_hcodes_, &code_max_bits_),
-      Error::kInvalidInput);
+  TEST_AND_RETURN_FALSE(
+      BuildHuffmanCodes(code_lens_, &code_hcodes_, &code_max_bits_));
 
   // Build literals/lengths and distance Huffman code length arrays.
   auto bytes_available = (*length - index);
   tmp_lens_.clear();
   TEST_AND_RETURN_FALSE(BuildHuffmanCodeLengths(
       br, buffer + index, &bytes_available, code_max_bits_,
-      num_lit_len + num_distance, &tmp_lens_, error));
+      num_lit_len + num_distance, &tmp_lens_));
   index += bytes_available;
 
   // TODO(ahassani): Optimize this so the memcpy is not needed anymore.
@@ -302,14 +296,12 @@ bool HuffmanTable::BuildDynamicHuffmanTable(BitReaderInterface* br,
   distance_lens_.insert(distance_lens_.begin(), tmp_lens_.begin() + num_lit_len,
                         tmp_lens_.end());
 
-  TEST_AND_RETURN_FALSE_SET_ERROR(
-      BuildHuffmanCodes(lit_len_lens_, &lit_len_hcodes_, &lit_len_max_bits_),
-      Error::kInvalidInput);
+  TEST_AND_RETURN_FALSE(
+      BuildHuffmanCodes(lit_len_lens_, &lit_len_hcodes_, &lit_len_max_bits_));
 
   // Build distance Huffman codes.
-  TEST_AND_RETURN_FALSE_SET_ERROR(
-      BuildHuffmanCodes(distance_lens_, &distance_hcodes_, &distance_max_bits_),
-      Error::kInvalidInput);
+  TEST_AND_RETURN_FALSE(BuildHuffmanCodes(distance_lens_, &distance_hcodes_,
+                                          &distance_max_bits_));
 
   *length = index;
   return true;
@@ -320,34 +312,29 @@ bool HuffmanTable::BuildHuffmanCodeLengths(BitReaderInterface* br,
                                            size_t* length,
                                            size_t max_bits,
                                            size_t num_codes,
-                                           Buffer* lens,
-                                           Error* error) {
+                                           Buffer* lens) {
   size_t index = 0;
   lens->clear();
   for (size_t idx = 0; idx < num_codes;) {
-    TEST_AND_RETURN_FALSE_SET_ERROR(br->CacheBits(max_bits),
-                                    Error::kInsufficientInput);
+    TEST_AND_RETURN_FALSE(br->CacheBits(max_bits));
     auto bits = br->ReadBits(max_bits);
     uint16_t code;
     size_t nbits;
-    TEST_AND_RETURN_FALSE_SET_ERROR(CodeAlphabet(bits, &code, &nbits),
-                                    Error::kInvalidInput);
-    TEST_AND_RETURN_FALSE_SET_ERROR(index < *length,
-                                    Error::kInsufficientOutput);
+    TEST_AND_RETURN_FALSE(CodeAlphabet(bits, &code, &nbits));
+    TEST_AND_RETURN_FALSE(index < *length);
     br->DropBits(nbits);
     if (code < 16) {
       buffer[index++] = code;
       lens->push_back(code);
       idx++;
     } else {
-      TEST_AND_RETURN_FALSE_SET_ERROR(code < 19, Error::kInvalidInput);
+      TEST_AND_RETURN_FALSE(code < 19);
       size_t copy_num = 0;
       uint8_t copy_val;
       switch (code) {
         case 16:
-          TEST_AND_RETURN_FALSE_SET_ERROR(idx != 0, Error::kInvalidInput);
-          TEST_AND_RETURN_FALSE_SET_ERROR(br->CacheBits(2),
-                                          Error::kInsufficientInput);
+          TEST_AND_RETURN_FALSE(idx != 0);
+          TEST_AND_RETURN_FALSE(br->CacheBits(2));
           copy_num = 3 + br->ReadBits(2);
           buffer[index++] = 16 + br->ReadBits(2);  // 3 - 6 times
           copy_val = (*lens)[idx - 1];
@@ -355,8 +342,7 @@ bool HuffmanTable::BuildHuffmanCodeLengths(BitReaderInterface* br,
           break;
 
         case 17:
-          TEST_AND_RETURN_FALSE_SET_ERROR(br->CacheBits(3),
-                                          Error::kInsufficientInput);
+          TEST_AND_RETURN_FALSE(br->CacheBits(3));
           copy_num = 3 + br->ReadBits(3);
           buffer[index++] = 20 + br->ReadBits(3);  // 3 - 10 times
           copy_val = 0;
@@ -364,8 +350,7 @@ bool HuffmanTable::BuildHuffmanCodeLengths(BitReaderInterface* br,
           break;
 
         case 18:
-          TEST_AND_RETURN_FALSE_SET_ERROR(br->CacheBits(7),
-                                          Error::kInsufficientInput);
+          TEST_AND_RETURN_FALSE(br->CacheBits(7));
           copy_num = 11 + br->ReadBits(7);
           buffer[index++] = 28 + br->ReadBits(7);  // 11 - 138 times
           copy_val = 0;
@@ -374,9 +359,7 @@ bool HuffmanTable::BuildHuffmanCodeLengths(BitReaderInterface* br,
 
         default:
           LOG(ERROR) << "Invalid code!";
-          *error = Error::kInvalidInput;
           return false;
-          break;
       }
       idx += copy_num;
       while (copy_num--) {
@@ -391,8 +374,7 @@ bool HuffmanTable::BuildHuffmanCodeLengths(BitReaderInterface* br,
 
 bool HuffmanTable::BuildDynamicHuffmanTable(const uint8_t* buffer,
                                             size_t length,
-                                            BitWriterInterface* bw,
-                                            Error* error) {
+                                            BitWriterInterface* bw) {
   if (!initialized_) {
     // Only resizing the arrays needed.
     code_lens_.resize(19);
@@ -409,27 +391,22 @@ bool HuffmanTable::BuildDynamicHuffmanTable(const uint8_t* buffer,
     initialized_ = true;
   }
 
-  TEST_AND_RETURN_FALSE_SET_ERROR(length >= 3, Error::kInsufficientInput);
+  TEST_AND_RETURN_FALSE(length >= 3);
   size_t index = 0;
   // Write the header.
   size_t num_lit_len = buffer[index] + 257;
-  TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBits(5, buffer[index++]),
-                                  Error::kInsufficientOutput);
+  TEST_AND_RETURN_FALSE(bw->WriteBits(5, buffer[index++]));
 
   size_t num_distance = buffer[index] + 1;
-  TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBits(5, buffer[index++]),
-                                  Error::kInsufficientOutput);
+  TEST_AND_RETURN_FALSE(bw->WriteBits(5, buffer[index++]));
 
   size_t num_codes = buffer[index] + 4;
-  TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBits(4, buffer[index++]),
-                                  Error::kInsufficientOutput);
+  TEST_AND_RETURN_FALSE(bw->WriteBits(4, buffer[index++]));
 
-  TEST_AND_RETURN_FALSE_SET_ERROR(
-      CheckHuffmanArrayLengths(num_lit_len, num_distance, num_codes),
-      Error::kInvalidInput);
+  TEST_AND_RETURN_FALSE(
+      CheckHuffmanArrayLengths(num_lit_len, num_distance, num_codes));
 
-  TEST_AND_RETURN_FALSE_SET_ERROR(length - index >= (num_codes + 1) / 2,
-                                  Error::kInsufficientInput);
+  TEST_AND_RETURN_FALSE(length - index >= (num_codes + 1) / 2);
   bool checked = false;
   size_t idx = 0;
   for (; idx < num_codes; idx++) {
@@ -441,8 +418,7 @@ bool HuffmanTable::BuildDynamicHuffmanTable(const uint8_t* buffer,
     }
     checked = !checked;
     code_lens_[kPermutations[idx]] = len;
-    TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBits(3, len),
-                                    Error::kInsufficientOutput);
+    TEST_AND_RETURN_FALSE(bw->WriteBits(3, len));
   }
   if (checked) {
     index++;
@@ -451,15 +427,14 @@ bool HuffmanTable::BuildDynamicHuffmanTable(const uint8_t* buffer,
     code_lens_[kPermutations[idx]] = 0;
   }
 
-  TEST_AND_RETURN_FALSE_SET_ERROR(
-      BuildHuffmanReverseCodes(code_lens_, &code_rcodes_, &code_max_bits_),
-      Error::kInvalidInput);
+  TEST_AND_RETURN_FALSE(
+      BuildHuffmanReverseCodes(code_lens_, &code_rcodes_, &code_max_bits_));
 
   // Build literal/lengths and distance Huffman code length arrays.
   auto bytes_available = length - index;
   TEST_AND_RETURN_FALSE(
       BuildHuffmanCodeLengths(buffer + index, &bytes_available, bw,
-                              num_lit_len + num_distance, &tmp_lens_, error));
+                              num_lit_len + num_distance, &tmp_lens_));
   index += bytes_available;
 
   lit_len_lens_.clear();
@@ -471,18 +446,14 @@ bool HuffmanTable::BuildDynamicHuffmanTable(const uint8_t* buffer,
                         tmp_lens_.end());
 
   // Build literal/lengths Huffman reverse codes.
-  TEST_AND_RETURN_FALSE_SET_ERROR(
-      BuildHuffmanReverseCodes(lit_len_lens_, &lit_len_rcodes_,
-                               &lit_len_max_bits_),
-      Error::kInvalidInput);
+  TEST_AND_RETURN_FALSE(BuildHuffmanReverseCodes(
+      lit_len_lens_, &lit_len_rcodes_, &lit_len_max_bits_));
 
   // Build distance Huffman reverse codes.
-  TEST_AND_RETURN_FALSE_SET_ERROR(
-      BuildHuffmanReverseCodes(distance_lens_, &distance_rcodes_,
-                               &distance_max_bits_),
-      Error::kInvalidInput);
+  TEST_AND_RETURN_FALSE(BuildHuffmanReverseCodes(
+      distance_lens_, &distance_rcodes_, &distance_max_bits_));
 
-  TEST_AND_RETURN_FALSE_SET_ERROR(length == index, Error::kInvalidInput);
+  TEST_AND_RETURN_FALSE(length == index);
 
   return true;
 }
@@ -491,22 +462,19 @@ bool HuffmanTable::BuildHuffmanCodeLengths(const uint8_t* buffer,
                                            size_t* length,
                                            BitWriterInterface* bw,
                                            size_t num_codes,
-                                           Buffer* lens,
-                                           Error* error) {
+                                           Buffer* lens) {
   lens->clear();
   uint16_t hcode;
   size_t nbits;
   size_t index = 0;
   for (size_t idx = 0; idx < num_codes;) {
-    TEST_AND_RETURN_FALSE_SET_ERROR(index < *length, Error::kInsufficientInput);
+    TEST_AND_RETURN_FALSE(index < *length);
     auto pcode = buffer[index++];
-    TEST_AND_RETURN_FALSE_SET_ERROR(pcode <= 155, Error::kInvalidInput);
+    TEST_AND_RETURN_FALSE(pcode <= 155);
 
     auto code = pcode < 16 ? pcode : pcode < 20 ? 16 : pcode < 28 ? 17 : 18;
-    TEST_AND_RETURN_FALSE_SET_ERROR(CodeHuffman(code, &hcode, &nbits),
-                                    Error::kInvalidInput);
-    TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBits(nbits, hcode),
-                                    Error::kInsufficientOutput);
+    TEST_AND_RETURN_FALSE(CodeHuffman(code, &hcode, &nbits));
+    TEST_AND_RETURN_FALSE(bw->WriteBits(nbits, hcode));
     if (code < 16) {
       lens->push_back(code);
       idx++;
@@ -516,23 +484,20 @@ bool HuffmanTable::BuildHuffmanCodeLengths(const uint8_t* buffer,
       switch (code) {
         case 16:
           // Cannot repeat a non-existent last code if idx == 0.
-          TEST_AND_RETURN_FALSE_SET_ERROR(idx != 0, Error::kInvalidInput);
-          TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBits(2, pcode - 16),
-                                          Error::kInsufficientOutput);
+          TEST_AND_RETURN_FALSE(idx != 0);
+          TEST_AND_RETURN_FALSE(bw->WriteBits(2, pcode - 16));
           copy_num = 3 + pcode - 16;
           copy_val = (*lens)[idx - 1];
           break;
 
         case 17:
-          TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBits(3, pcode - 20),
-                                          Error::kInsufficientOutput);
+          TEST_AND_RETURN_FALSE(bw->WriteBits(3, pcode - 20));
           copy_num = 3 + pcode - 20;
           copy_val = 0;
           break;
 
         case 18:
-          TEST_AND_RETURN_FALSE_SET_ERROR(bw->WriteBits(7, pcode - 28),
-                                          Error::kInsufficientOutput);
+          TEST_AND_RETURN_FALSE(bw->WriteBits(7, pcode - 28));
           copy_num = 11 + pcode - 28;
           copy_val = 0;
           break;

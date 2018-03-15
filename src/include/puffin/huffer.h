@@ -9,7 +9,6 @@
 #include <memory>
 
 #include "puffin/common.h"
-#include "puffin/errors.h"
 
 namespace puffin {
 
@@ -24,9 +23,7 @@ class PUFFIN_EXPORT Huffer {
 
   // Creates a deflate buffer from a puffed buffer. It is the reverse of
   // |PuffDeflate|.
-  bool HuffDeflate(PuffReaderInterface* pr,
-                   BitWriterInterface* bw,
-                   Error* error) const;
+  bool HuffDeflate(PuffReaderInterface* pr, BitWriterInterface* bw) const;
 
  private:
   std::unique_ptr<HuffmanTable> dyn_ht_;

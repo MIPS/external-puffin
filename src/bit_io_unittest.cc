@@ -8,7 +8,7 @@
 
 #include "puffin/src/bit_reader.h"
 #include "puffin/src/bit_writer.h"
-#include "puffin/src/set_errors.h"
+#include "puffin/src/logging.h"
 #include "puffin/src/unittest_common.h"
 
 namespace puffin {

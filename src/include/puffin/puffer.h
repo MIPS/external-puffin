@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "puffin/common.h"
-#include "puffin/errors.h"
 #include "puffin/stream.h"
 
 namespace puffin {
@@ -27,8 +26,7 @@ class PUFFIN_EXPORT Puffer {
   // it will be populated with the location of subblocks in the input data.
   bool PuffDeflate(BitReaderInterface* br,
                    PuffWriterInterface* pw,
-                   std::vector<BitExtent>* deflates,
-                   Error* error) const;
+                   std::vector<BitExtent>* deflates) const;
 
  private:
   std::unique_ptr<HuffmanTable> dyn_ht_;

@@ -16,9 +16,9 @@
 #include "puffin/src/include/puffin/huffer.h"
 #include "puffin/src/include/puffin/puffer.h"
 #include "puffin/src/include/puffin/stream.h"
+#include "puffin/src/logging.h"
 #include "puffin/src/puff_reader.h"
 #include "puffin/src/puff_writer.h"
-#include "puffin/src/set_errors.h"
 
 using std::shared_ptr;
 using std::unique_ptr;
@@ -288,9 +288,8 @@ bool PuffinStream::Read(void* buffer, size_t count) {
         TEST_AND_RETURN_FALSE(bit_reader.CacheBits(extra_bits_len));
         bit_reader.DropBits(extra_bits_len);
 
-        Error error;
         TEST_AND_RETURN_FALSE(
-            puffer_->PuffDeflate(&bit_reader, &puff_writer, nullptr, &error));
+            puffer_->PuffDeflate(&bit_reader, &puff_writer, nullptr));
         TEST_AND_RETURN_FALSE(bytes_to_read == bit_reader.Offset());
         TEST_AND_RETURN_FALSE(cur_puff_->length == puff_writer.Size());
       } else {
@@ -385,9 +384,7 @@ bool PuffinStream::Write(const void* buffer, size_t count) {
             bit_writer.WriteBits(cur_deflate_->offset & 7, last_byte_));
         last_byte_ = 0;
 
-        Error error;
-        TEST_AND_RETURN_FALSE(
-            huffer_->HuffDeflate(&puff_reader, &bit_writer, &error));
+        TEST_AND_RETURN_FALSE(huffer_->HuffDeflate(&puff_reader, &bit_writer));
         TEST_AND_RETURN_FALSE(bit_writer.Size() == bytes_to_write);
         TEST_AND_RETURN_FALSE(puff_reader.BytesLeft() == 0);
 

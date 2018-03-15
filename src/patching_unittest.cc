@@ -11,10 +11,10 @@
 #include "puffin/src/include/puffin/puffdiff.h"
 #include "puffin/src/include/puffin/puffpatch.h"
 #include "puffin/src/include/puffin/utils.h"
+#include "puffin/src/logging.h"
 #include "puffin/src/memory_stream.h"
 #include "puffin/src/puffin_stream.h"
 #include "puffin/src/sample_generator.h"
-#include "puffin/src/set_errors.h"
 #include "puffin/src/unittest_common.h"
 
 #define PRINT_SAMPLE 0  // Set to 1 if you want to print the generated samples.

@@ -23,7 +23,6 @@ using puffin::BufferBitReader;
 using puffin::BufferBitWriter;
 using puffin::BufferPuffReader;
 using puffin::BufferPuffWriter;
-using puffin::Error;
 using puffin::Huffer;
 using puffin::MemoryStream;
 using puffin::Puffer;
@@ -35,18 +34,16 @@ void FuzzPuff(const uint8_t* data, size_t size) {
   Buffer puff_buffer(size * 2);
   BufferPuffWriter puff_writer(puff_buffer.data(), puff_buffer.size());
   vector<BitExtent> bit_extents;
-  Error error;
   Puffer puffer;
-  puffer.PuffDeflate(&bit_reader, &puff_writer, &bit_extents, &error);
+  puffer.PuffDeflate(&bit_reader, &puff_writer, &bit_extents);
 }
 
 void FuzzHuff(const uint8_t* data, size_t size) {
   BufferPuffReader puff_reader(data, size);
   Buffer deflate_buffer(size);
   BufferBitWriter bit_writer(deflate_buffer.data(), deflate_buffer.size());
-  Error error;
   Huffer huffer;
-  huffer.HuffDeflate(&puff_reader, &bit_writer, &error);
+  huffer.HuffDeflate(&puff_reader, &bit_writer);
 }
 
 void FuzzPuffPatch(const uint8_t* data, size_t size) {
