@@ -344,10 +344,13 @@ bool Main(int argc, char** argv) {
                                                  &dst_deflates_bit));
     }
 
+    // TODO(xunchang) add flags to select the bsdiff compressors.
     Buffer puffdiff_delta;
     TEST_AND_RETURN_FALSE(puffin::PuffDiff(
         std::move(src_stream), std::move(dst_stream), src_deflates_bit,
-        dst_deflates_bit, "/tmp/patch.tmp", &puffdiff_delta));
+        dst_deflates_bit,
+        {bsdiff::CompressorType::kBZ2, bsdiff::CompressorType::kBrotli},
+        "/tmp/patch.tmp", &puffdiff_delta));
     if (FLAGS_verbose) {
       LOG(INFO) << "patch_size: " << puffdiff_delta.size();
     }
