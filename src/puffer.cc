@@ -20,8 +20,8 @@
 
 namespace puffin {
 
-using std::vector;
 using std::string;
+using std::vector;
 
 Puffer::Puffer() : dyn_ht_(new HuffmanTable()), fix_ht_(new HuffmanTable()) {}
 

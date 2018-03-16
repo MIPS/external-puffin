@@ -21,8 +21,8 @@
 
 namespace puffin {
 
-using std::vector;
 using std::string;
+using std::vector;
 
 void TestPatching(const Buffer& src_buf,
                   const Buffer& dst_buf,

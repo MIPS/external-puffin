@@ -12,35 +12,34 @@
 
 namespace puffin {
 
-// clang-format off
 // Permutations of input Huffman code lengths (used only to read code lengths
 // necessary for reading Huffman table.)
-const uint8_t kPermutations[19] = {
-  16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
+const uint8_t kPermutations[19] = {16, 17, 18, 0, 8,  7, 9,  6, 10, 5,
+                                   11, 4,  12, 3, 13, 2, 14, 1, 15};
 
 // The bases of each alphabet which is added to the integer value of extra
 // bits that comes after the Huffman code in the input to create the given
 // length value. The last element is a guard.
 const uint16_t kLengthBases[30] = {
-  3,  4,  5,  6,  7,  8,  9,  10, 11,  13,  15,  17,  19,  23,  27, 31, 35, 43,
-  51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258, 0xFFFF};
+    3,  4,  5,  6,  7,  8,  9,  10, 11,  13,  15,  17,  19,  23,  27,
+    31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258, 0xFFFF};
 
 // Number of extra bits that comes after the associating Huffman code.
-const uint8_t kLengthExtraBits[29] = {
-  0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5,
-  5, 5, 0};
+const uint8_t kLengthExtraBits[29] = {0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
+                                      1, 1, 2, 2, 2, 2, 3, 3, 3, 3,
+                                      4, 4, 4, 4, 5, 5, 5, 5, 0};
 
 // Same as |kLengthBases| but for the distances instead of lengths. The last
 // element is a guard.
 const uint16_t kDistanceBases[31] = {
-  1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769,
-  1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577, 0xFFFF};
+    1,    2,    3,    4,    5,    7,     9,     13,    17,    25,   33,
+    49,   65,   97,   129,  193,  257,   385,   513,   769,   1025, 1537,
+    2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577, 0xFFFF};
 
 // Same as |kLengthExtraBits| but for distances instead of lengths.
-const uint8_t kDistanceExtraBits[30] = {
-  0, 0, 0,  0,  1,  1,  2,  2,  3,  3,  4, 4, 5,  5,  6,  6,  7,  7,  8,  8, 9,
-  9, 10, 10, 11, 11, 12, 12, 13, 13};
-// clang-format on
+const uint8_t kDistanceExtraBits[30] = {0, 0, 0,  0,  1,  1,  2,  2,  3,  3,
+                                        4, 4, 5,  5,  6,  6,  7,  7,  8,  8,
+                                        9, 9, 10, 10, 11, 11, 12, 12, 13, 13};
 
 // 288 is the maximum number of needed huffman codes for an alphabet. Fixed
 // huffman table needs 288 and dynamic huffman table needs maximum 286.
@@ -111,8 +110,7 @@ bool HuffmanTable::BuildHuffmanCodes(const Buffer& lens,
                                      size_t* max_bits) {
   TEST_AND_RETURN_FALSE(InitHuffmanCodes(lens, max_bits));
   // Sort descending based on the bit-length of the code.
-  std::sort(codeindexpairs_.begin(),
-            codeindexpairs_.end(),
+  std::sort(codeindexpairs_.begin(), codeindexpairs_.end(),
             [&lens](const CodeIndexPair& a, const CodeIndexPair& b) {
               return lens[a.index] > lens[b.index];
             });
@@ -139,8 +137,7 @@ bool HuffmanTable::BuildHuffmanReverseCodes(const Buffer& lens,
                                             size_t* max_bits) {
   TEST_AND_RETURN_FALSE(InitHuffmanCodes(lens, max_bits));
   // Sort ascending based on the index.
-  std::sort(codeindexpairs_.begin(),
-            codeindexpairs_.end(),
+  std::sort(codeindexpairs_.begin(), codeindexpairs_.end(),
             [](const CodeIndexPair& a, const CodeIndexPair& b) -> bool {
               return a.index < b.index;
             });
@@ -193,8 +190,8 @@ bool HuffmanTable::BuildFixedHuffmanTable() {
     TEST_AND_RETURN_FALSE(
         BuildHuffmanCodes(lit_len_lens_, &lit_len_hcodes_, &lit_len_max_bits_));
 
-    TEST_AND_RETURN_FALSE(BuildHuffmanCodes(
-        distance_lens_, &distance_hcodes_, &distance_max_bits_));
+    TEST_AND_RETURN_FALSE(BuildHuffmanCodes(distance_lens_, &distance_hcodes_,
+                                            &distance_max_bits_));
 
     TEST_AND_RETURN_FALSE(BuildHuffmanReverseCodes(
         lit_len_lens_, &lit_len_rcodes_, &lit_len_max_bits_));
@@ -475,14 +472,14 @@ bool HuffmanTable::BuildDynamicHuffmanTable(const uint8_t* buffer,
 
   // Build literal/lengths Huffman reverse codes.
   TEST_AND_RETURN_FALSE_SET_ERROR(
-      BuildHuffmanReverseCodes(
-          lit_len_lens_, &lit_len_rcodes_, &lit_len_max_bits_),
+      BuildHuffmanReverseCodes(lit_len_lens_, &lit_len_rcodes_,
+                               &lit_len_max_bits_),
       Error::kInvalidInput);
 
   // Build distance Huffman reverse codes.
   TEST_AND_RETURN_FALSE_SET_ERROR(
-      BuildHuffmanReverseCodes(
-          distance_lens_, &distance_rcodes_, &distance_max_bits_),
+      BuildHuffmanReverseCodes(distance_lens_, &distance_rcodes_,
+                               &distance_max_bits_),
       Error::kInvalidInput);
 
   TEST_AND_RETURN_FALSE_SET_ERROR(length == index, Error::kInvalidInput);

@@ -25,9 +25,9 @@ using std::endl;
 using std::string;
 
 bool CompressToDeflate(const Buffer& uncomp,
-                      Buffer* comp,
-                      int compression,
-                      int strategy) {
+                       Buffer* comp,
+                       int compression,
+                       int strategy) {
   z_stream stream;
   stream.next_in = (z_const Bytef*)uncomp.data();
   stream.avail_in = static_cast<unsigned int>(uncomp.size());

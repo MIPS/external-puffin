@@ -24,8 +24,8 @@
 
 namespace puffin {
 
-using std::vector;
 using std::string;
+using std::vector;
 
 class PuffinTest : public ::testing::Test {
  public:
@@ -174,8 +174,8 @@ class PuffinTest : public ::testing::Test {
     uncompress->resize(original.size());
     auto uncomp_size = uncompress->size();
     auto puffed_size = puffed.size();
-    ASSERT_TRUE(DecompressPuff(
-        puffed.data(), &puffed_size, uncompress->data(), &uncomp_size));
+    ASSERT_TRUE(DecompressPuff(puffed.data(), &puffed_size, uncompress->data(),
+                               &uncomp_size));
     ASSERT_EQ(puffed_size, puffed.size());
     ASSERT_EQ(uncomp_size, original.size());
     uncompress->resize(uncomp_size);

@@ -22,9 +22,9 @@
 
 namespace puffin {
 
-using std::vector;
-using std::unique_ptr;
 using std::shared_ptr;
+using std::unique_ptr;
+using std::vector;
 
 namespace {
 

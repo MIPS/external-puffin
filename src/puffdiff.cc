@@ -13,11 +13,11 @@
 
 #include "bsdiff/bsdiff.h"
 
+#include "puffin/src/file_stream.h"
 #include "puffin/src/include/puffin/common.h"
 #include "puffin/src/include/puffin/puffer.h"
 #include "puffin/src/include/puffin/puffpatch.h"
 #include "puffin/src/include/puffin/utils.h"
-#include "puffin/src/file_stream.h"
 #include "puffin/src/memory_stream.h"
 #include "puffin/src/puffin.pb.h"
 #include "puffin/src/puffin_stream.h"

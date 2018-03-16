@@ -160,9 +160,9 @@ bool PuffPatch(UniqueStreamPtr src,
           std::move(dst), huffer, dst_puff_size, dst_deflates, dst_puffs)));
 
   // Running bspatch itself.
-  TEST_AND_RETURN_FALSE(
-      0 ==
-      bspatch(reader, writer, &patch[bsdiff_patch_offset], bsdiff_patch_size));
+  TEST_AND_RETURN_FALSE(0 == bspatch(reader, writer,
+                                     &patch[bsdiff_patch_offset],
+                                     bsdiff_patch_size));
   return true;
 }
 
