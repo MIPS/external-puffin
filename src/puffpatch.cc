@@ -90,8 +90,13 @@ bool DecodePatch(const uint8_t* patch,
 
 class BsdiffStream : public bsdiff::FileInterface {
  public:
-  explicit BsdiffStream(UniqueStreamPtr stream) : stream_(std::move(stream)) {}
   ~BsdiffStream() override = default;
+
+  static std::unique_ptr<bsdiff::FileInterface> Create(UniqueStreamPtr stream) {
+    TEST_AND_RETURN_VALUE(stream, nullptr);
+    return std::unique_ptr<bsdiff::FileInterface>(
+        new BsdiffStream(std::move(stream)));
+  }
 
   bool Read(void* buf, size_t count, size_t* bytes_read) override {
     *bytes_read = 0;
@@ -123,6 +128,8 @@ class BsdiffStream : public bsdiff::FileInterface {
   }
 
  private:
+  explicit BsdiffStream(UniqueStreamPtr stream) : stream_(std::move(stream)) {}
+
   UniqueStreamPtr stream_;
 
   DISALLOW_COPY_AND_ASSIGN(BsdiffStream);
@@ -150,14 +157,15 @@ bool PuffPatch(UniqueStreamPtr src,
   auto huffer = std::make_shared<Huffer>();
 
   // For reading from source.
-  std::unique_ptr<bsdiff::FileInterface> reader(new BsdiffStream(
+  auto reader = BsdiffStream::Create(
       PuffinStream::CreateForPuff(std::move(src), puffer, src_puff_size,
-                                  src_deflates, src_puffs, max_cache_size)));
+                                  src_deflates, src_puffs, max_cache_size));
+  TEST_AND_RETURN_FALSE(reader);
 
   // For writing into destination.
-  std::unique_ptr<bsdiff::FileInterface> writer(
-      new BsdiffStream(PuffinStream::CreateForHuff(
-          std::move(dst), huffer, dst_puff_size, dst_deflates, dst_puffs)));
+  auto writer = BsdiffStream::Create(PuffinStream::CreateForHuff(
+      std::move(dst), huffer, dst_puff_size, dst_deflates, dst_puffs));
+  TEST_AND_RETURN_FALSE(writer);
 
   // Running bspatch itself.
   TEST_AND_RETURN_FALSE(0 == bspatch(reader, writer,
