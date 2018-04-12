@@ -164,7 +164,8 @@ bool PuffPatch(UniqueStreamPtr src,
 
   // For writing into destination.
   auto writer = BsdiffStream::Create(PuffinStream::CreateForHuff(
-      std::move(dst), huffer, dst_puff_size, dst_deflates, dst_puffs));
+      std::move(dst), huffer, dst_puff_size, dst_deflates, dst_puffs,
+      /*ignore_deflate_size=*/false));
   TEST_AND_RETURN_FALSE(writer);
 
   // Running bspatch itself.

@@ -212,7 +212,8 @@ class PuffinTest : public ::testing::Test {
 
     src_puffin_stream =
         PuffinStream::CreateForHuff(std::move(deflate_stream), huffer,
-                                    puff_size, deflate_extents, puff_extents);
+                                    puff_size, deflate_extents, puff_extents,
+                                    /*ignore_deflate_size=*/true);
 
     ASSERT_TRUE(
         src_puffin_stream->Write(puff_buffer.data(), puff_buffer.size()));
@@ -531,6 +532,31 @@ const std::vector<ByteExtent> kGapPuffExtents = {
 TEST_F(PuffinTest, BitExtentPuffAndHuffTest) {
   CheckBitExtentsPuffAndHuff(kGapDeflates, kGapSubblockDeflateExtents,
                              kGapPuffs, kGapPuffExtents);
+}
+
+TEST_F(PuffinTest, IgnoreDeflateSizeTest) {
+  std::shared_ptr<Huffer> huffer(new Huffer());
+  Buffer out_deflate_buffer;
+  EXPECT_FALSE(PuffinStream::CreateForHuff(
+      MemoryStream::CreateForWrite(&out_deflate_buffer), huffer,
+      kGapPuffs.size(), kGapSubblockDeflateExtents, kGapPuffExtents,
+      /*ignore_deflate_size=*/false));
+
+  EXPECT_TRUE(PuffinStream::CreateForHuff(
+      MemoryStream::CreateForWrite(&out_deflate_buffer), huffer,
+      kGapPuffs.size(), kGapSubblockDeflateExtents, kGapPuffExtents,
+      /*ignore_deflate_size=*/true));
+
+  out_deflate_buffer.resize(kGapDeflates.size());
+  EXPECT_TRUE(PuffinStream::CreateForHuff(
+      MemoryStream::CreateForWrite(&out_deflate_buffer), huffer,
+      kGapPuffs.size(), kGapSubblockDeflateExtents, kGapPuffExtents,
+      /*ignore_deflate_size=*/true));
+
+  EXPECT_TRUE(PuffinStream::CreateForHuff(
+      MemoryStream::CreateForWrite(&out_deflate_buffer), huffer,
+      kGapPuffs.size(), kGapSubblockDeflateExtents, kGapPuffExtents,
+      /*ignore_deflate_size=*/false));
 }
 
 // TODO(ahassani): add tests for:

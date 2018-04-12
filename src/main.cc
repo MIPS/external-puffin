@@ -277,7 +277,7 @@ bool Main(int argc, char** argv) {
       auto huffer = std::make_shared<Huffer>();
       auto huff_writer = PuffinStream::CreateForHuff(
           std::move(dst_stream), huffer, dst_puff_size, dst_deflates_bit,
-          src_puffs);
+          src_puffs, /*ignore_deflate_size=*/true);
 
       uint64_t bytes_read = 0;
       while (bytes_read < dst_puff_size) {
@@ -302,7 +302,8 @@ bool Main(int argc, char** argv) {
     auto huffer = std::make_shared<Huffer>();
     auto dst_stream = PuffinStream::CreateForHuff(std::move(dst_file), huffer,
                                                   src_stream_size,
-                                                  dst_deflates_bit, src_puffs);
+                                                  dst_deflates_bit, src_puffs,
+                                                  /*ignore_deflate_size=*/true);
 
     Buffer buffer(1024 * 1024);
     uint64_t bytes_read = 0;

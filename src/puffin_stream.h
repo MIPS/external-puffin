@@ -57,11 +57,14 @@ class PuffinStream : public StreamInterface {
   //                 completely puffed.
   // |deflates|  IN  The location of deflates in |stream|.
   // |puffs|     IN  The location of puffs into the input puff stream.
+  // |ignore_deflate_size| IN  Ignores integrity checking the size of the
+  //                           |stream|.
   static UniqueStreamPtr CreateForHuff(UniqueStreamPtr stream,
                                        std::shared_ptr<Huffer> huffer,
                                        uint64_t puff_size,
                                        const std::vector<BitExtent>& deflates,
-                                       const std::vector<ByteExtent>& puffs);
+                                       const std::vector<ByteExtent>& puffs,
+                                       bool ignore_deflate_size);
 
   bool GetSize(uint64_t* size) const override;
 

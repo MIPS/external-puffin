@@ -128,7 +128,7 @@ void TestPatching(const Buffer& src_buf,
   EXPECT_EQ(patch_out, patch);
 
   auto src_stream = MemoryStream::CreateForRead(src_buf);
-  Buffer dst_buf_out;
+  Buffer dst_buf_out(dst_buf.size());
   auto dst_stream = MemoryStream::CreateForWrite(&dst_buf_out);
   ASSERT_TRUE(PuffPatch(std::move(src_stream), std::move(dst_stream),
                         patch.data(), patch.size()));
