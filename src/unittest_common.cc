@@ -9,7 +9,11 @@ using std::string;
 namespace puffin {
 
 bool MakeTempFile(string* filename, int* fd) {
+#ifdef __ANDROID__
+  char tmp_template[] = "/data/local/tmp/puffin-XXXXXX";
+#else
   char tmp_template[] = "/tmp/puffin-XXXXXX";
+#endif  // __ANDROID__
   int mkstemp_fd = mkstemp(tmp_template);
   TEST_AND_RETURN_FALSE(mkstemp_fd >= 0);
   if (filename) {
