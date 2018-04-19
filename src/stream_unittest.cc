@@ -175,7 +175,8 @@ TEST_F(StreamTest, MemoryStreamTest) {
 }
 
 TEST_F(StreamTest, FileStreamTest) {
-  string filepath("/tmp/test_filepath");
+  string filepath;
+  ASSERT_TRUE(MakeTempFile(&filepath, nullptr));
   ScopedPathUnlinker scoped_unlinker(filepath);
   ASSERT_FALSE(FileStream::Open(filepath, false, false));
 
