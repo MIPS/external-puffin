@@ -207,4 +207,24 @@ TEST(UtilsTest, LocateDeflatesInGzipWithExtraField) {
   EXPECT_EQ(ByteExtent(32, 13), deflates[0]);
 }
 
+TEST(UtilsTest, RemoveEqualBitExtents) {
+  Buffer data1 = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+  Buffer data2 = {1, 2, 3, 4, 5, 5, 6, 7, 8, 9};
+  vector<BitExtent> ext1 = {{0, 10}, {10, 14}, {25, 15}, {40, 8}, {50, 23}};
+  vector<BitExtent> ext2 = {{0, 10}, {17, 15}, {32, 8}, {40, 8}, {50, 23}};
+  RemoveEqualBitExtents(data1, data2, &ext1, &ext2);
+  vector<BitExtent> expected_ext1 = {{0, 10}, {10, 14}};
+  EXPECT_EQ(expected_ext1, ext1);
+  vector<BitExtent> expected_ext2 = {{0, 10}};
+  EXPECT_EQ(expected_ext2, ext2);
+  RemoveEqualBitExtents(data1, data2, &ext1, &ext1);
+  EXPECT_EQ(expected_ext1, ext1);
+  RemoveEqualBitExtents(data1, data1, &ext1, &ext1);
+  EXPECT_TRUE(ext1.empty());
+  expected_ext1 = ext1 = {{0, 0}, {1, 1}, {2, 7}};
+  RemoveEqualBitExtents(data1, data2, &ext1, &ext2);
+  EXPECT_EQ(expected_ext1, ext1);
+  EXPECT_EQ(expected_ext2, ext2);
+}
+
 }  // namespace puffin
