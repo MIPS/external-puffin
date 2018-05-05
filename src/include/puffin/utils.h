@@ -70,6 +70,15 @@ bool FindPuffLocations(const UniqueStreamPtr& src,
                        std::vector<ByteExtent>* puffs,
                        uint64_t* out_puff_size);
 
+// Removes any BitExtents from both |extents1| and |extents2| if the data it
+// points to is found in both |extents1| and |extents2|. The order of the
+// remaining BitExtents is preserved.
+PUFFIN_EXPORT
+void RemoveEqualBitExtents(const Buffer& data1,
+                           const Buffer& data2,
+                           std::vector<BitExtent>* extents1,
+                           std::vector<BitExtent>* extents2);
+
 }  // namespace puffin
 
 #endif  // SRC_INCLUDE_PUFFIN_UTILS_H_

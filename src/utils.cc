@@ -6,6 +6,8 @@
 
 #include <inttypes.h>
 
+#include <algorithm>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -19,6 +21,7 @@
 #include "puffin/src/memory_stream.h"
 #include "puffin/src/puff_writer.h"
 
+using std::set;
 using std::string;
 using std::vector;
 
@@ -73,6 +76,40 @@ bool CalculateSizeOfDeflateBlock(const puffin::Buffer& data,
   TEST_AND_RETURN_FALSE(inflateEnd(&strm) == Z_OK);
   return true;
 }
+
+struct ExtentData {
+  puffin::BitExtent extent;
+  uint64_t byte_offset;
+  uint64_t byte_length;
+  const puffin::Buffer& data;
+
+  ExtentData(const puffin::BitExtent& in_extent, const puffin::Buffer& in_data)
+      : extent(in_extent), data(in_data) {
+    // Round start offset up and end offset down to exclude bits not in this
+    // extent. We simply ignore the bits at start and end that's not on byte
+    // boundary because as long as the majority of the bytes are the same,
+    // bsdiff will be able to reference it.
+    byte_offset = (extent.offset + 7) / 8;
+    uint64_t byte_end_offset = (extent.offset + extent.length) / 8;
+    CHECK(byte_end_offset <= data.size());
+    if (byte_end_offset > byte_offset) {
+      byte_length = byte_end_offset - byte_offset;
+    } else {
+      byte_length = 0;
+    }
+  }
+
+  int Compare(const ExtentData& other) const {
+    if (extent.length != other.extent.length) {
+      return extent.length < other.extent.length ? -1 : 1;
+    }
+    return memcmp(data.data() + byte_offset,
+                  other.data.data() + other.byte_offset,
+                  std::min(byte_length, other.byte_length));
+  }
+  bool operator<(const ExtentData& other) const { return Compare(other) < 0; }
+  bool operator==(const ExtentData& other) const { return Compare(other) == 0; }
+};
 
 }  // namespace
 
@@ -398,4 +435,31 @@ bool FindPuffLocations(const UniqueStreamPtr& src,
   return true;
 }
 
+void RemoveEqualBitExtents(const Buffer& data1,
+                           const Buffer& data2,
+                           std::vector<BitExtent>* extents1,
+                           std::vector<BitExtent>* extents2) {
+  set<ExtentData> extent1_set, equal_extents;
+  for (const BitExtent& ext : *extents1) {
+    extent1_set.emplace(ext, data1);
+  }
+
+  auto new_extents2_end = extents2->begin();
+  for (const BitExtent& ext : *extents2) {
+    ExtentData extent_data(ext, data2);
+    if (extent1_set.find(extent_data) != extent1_set.end()) {
+      equal_extents.insert(extent_data);
+    } else {
+      *new_extents2_end++ = ext;
+    }
+  }
+  extents2->erase(new_extents2_end, extents2->end());
+  extents1->erase(
+      std::remove_if(extents1->begin(), extents1->end(),
+                     [&equal_extents, &data1](const BitExtent& ext) {
+                       return equal_extents.find(ExtentData(ext, data1)) !=
+                              equal_extents.end();
+                     }),
+      extents1->end());
+}
 }  // namespace puffin
